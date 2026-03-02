@@ -318,10 +318,10 @@ where $z = \frac{y - \mu}{\sigma}$, $\Phi(\cdot)$ is the standard normal CDF, an
 | **NLL** | $-\frac{1}{N}\sum_i \log p(y_i \mid \mu_i, \sigma^2_i)$ | Proper scoring rule |
 | **CRPS** | See above | Proper scoring rule |
 | **PICP** | $\frac{1}{N}\sum_i \mathbb{1}[y_i \in \text{CI}_i]$ | Interval coverage |
-| **Sharpness** | $\frac{1}{N}\sum_i |\text{CI}_{\text{upper},i} - \text{CI}_{\text{lower},i}|$ | Interval width |
-| **Calibration Error** | $\frac{1}{Q}\sum_q |p_q - \hat{p}_q|$ | Coverage deviation |
+| **Sharpness** | Mean prediction interval width | Interval width |
+| **Calibration Error** | $\frac{1}{Q}\sum_q \lvert p_q - \hat{p}_q \rvert$ | Coverage deviation |
 | **PIT** | $F(y_i \mid \mu_i, \sigma^2_i)$ | Should be $\sim U(0,1)$ |
-| **Uncertainty-Error Correlation** | $\text{Corr}(\sigma_i, |y_i - \mu_i|)$ | Uncertainty quality |
+| **Uncertainty-Error Correlation** | $\text{Corr}(\sigma_i, \lvert y_i - \mu_i \rvert)$ | Uncertainty quality |
 
 The **Probability Integral Transform (PIT)** computes $u_i = \Phi\left(\frac{y_i - \mu_i}{\sigma_i}\right)$ for each prediction. A well-calibrated model produces PIT values that are uniformly distributed on $[0, 1]$.
 
@@ -374,18 +374,20 @@ Forecasting/probabilistic/
 
 We define **10 experimental configurations** spanning three uncertainty quantification paradigms (Gaussian NLL, MC Dropout, Deep Evidential Regression) across two backbone architectures (TSLANet, LSTM). Each configuration is tested on **4 prediction horizons** ($T \in \{96, 192, 336, 720\}$), yielding **40 total experiments**.
 
-| ID | Backbone | Training Loss | Uncertainty Method | Coverage Loss | Inference Mode | # Forward Passes | Decomposition | Purpose |
-|----|----------|---------------|--------------------|---------------|----------------|-------------------|---------------|---------|
+| ID | Backbone | Training Loss | Uncertainty Method | Coverage Loss | Inference | Passes | Decomposition | Purpose |
+|----|----------|---------------|--------------------|---------------|-----------|--------|---------------|---------|
 | **A1** | TSLANet | MSE | None (deterministic) | No | Single-pass | 1 | None | Point prediction baseline |
-| **A2** | TSLANet | Gaussian NLL | Heteroscedastic $\sigma^2(\mathbf{x})$ | No | Single-pass | 1 | Aleatoric only | Aleatoric uncertainty baseline |
-| **A3** | TSLANet | Gaussian NLL | MC Dropout ($K=50$) | No | Stochastic | 50 | Aleatoric + Epistemic | Full uncertainty decomposition |
-| **A3+** | TSLANet | Gaussian NLL + $\lambda_{\text{cov}}\mathcal{L}_{\text{cov}}$ | MC Dropout ($K=50$) | **Yes** (Gaussian) | Stochastic | 50 | Aleatoric + Epistemic | Calibration-optimized MC Dropout |
-| **A4** | TSLANet | Gaussian NLL | Deep Ensemble ($M=5$) | No | Ensemble | 5 | Aleatoric + Epistemic | Ensemble-based decomposition |
-| **A5** | LSTM | Gaussian NLL | MC Dropout ($K=50$) | No | Stochastic | 50 | Aleatoric + Epistemic | Architecture comparison |
+| **A2** | TSLANet | Gaussian NLL | Heteroscedastic variance | No | Single-pass | 1 | Aleatoric only | Aleatoric uncertainty baseline |
+| **A3** | TSLANet | Gaussian NLL | MC Dropout (K=50) | No | Stochastic | 50 | Aleatoric + Epistemic | Full uncertainty decomposition |
+| **A3+** | TSLANet | Gaussian NLL + CovLoss | MC Dropout (K=50) | **Yes** (Gaussian) | Stochastic | 50 | Aleatoric + Epistemic | Calibration-optimized MC Dropout |
+| **A4** | TSLANet | Gaussian NLL | Deep Ensemble (M=5) | No | Ensemble | 5 | Aleatoric + Epistemic | Ensemble-based decomposition |
+| **A5** | LSTM | Gaussian NLL | MC Dropout (K=50) | No | Stochastic | 50 | Aleatoric + Epistemic | Architecture comparison |
 | **A6** | LSTM | MSE | None (deterministic) | No | Single-pass | 1 | None | LSTM point baseline |
-| **A7** | TSLANet | Evidential (NIG NLL + $\lambda_{\text{evd}}\mathcal{L}_{\text{reg}}$) | DER: NIG prior | No | Single-pass | 1 | Aleatoric + Epistemic | Single-pass uncertainty decomposition |
-| **A7+** | TSLANet | Evidential + $\lambda_{\text{cov}}\mathcal{L}_{\text{cov}}$ | DER: NIG prior | **Yes** (Student-t) | Single-pass | 1 | Aleatoric + Epistemic | Calibration-optimized DER |
-| **A8** | LSTM | Evidential (NIG NLL + $\lambda_{\text{evd}}\mathcal{L}_{\text{reg}}$) | DER: NIG prior | No | Single-pass | 1 | Aleatoric + Epistemic | DER on LSTM backbone |
+| **A7** | TSLANet | Evidential (NIG NLL + reg.) | DER: NIG prior | No | Single-pass | 1 | Aleatoric + Epistemic | Single-pass decomposition |
+| **A7+** | TSLANet | Evidential + CovLoss | DER: NIG prior | **Yes** (Student-t) | Single-pass | 1 | Aleatoric + Epistemic | Calibration-optimized DER |
+| **A8** | LSTM | Evidential (NIG NLL + reg.) | DER: NIG prior | No | Single-pass | 1 | Aleatoric + Epistemic | DER on LSTM backbone |
+
+> **Notation:** "CovLoss" = Coverage Loss ($\lambda_{\text{cov}} \cdot \mathcal{L}_{\text{coverage}}$); "reg." = evidence regularization ($\lambda_{\text{evd}} \cdot \mathcal{L}_{\text{reg}}$); K = number of MC Dropout forward passes; M = number of ensemble members.
 
 **Key distinctions:**
 
@@ -478,21 +480,21 @@ The table below lists every configuration-specific hyperparameter. Shared hyperp
 
 ### 6.4 Evaluation Metrics per Configuration
 
-All configurations are evaluated on the same comprehensive metric suite. Metrics marked with $\checkmark$ are meaningful for that configuration; $\times$ means not applicable.
+All configurations are evaluated on the same comprehensive metric suite (formulas defined in [Innovation 8](#innovation-8-comprehensive-calibration-analysis)). ✓ = meaningful; ✗ = not applicable.
 
-| Category | Metric | Formula | A1 | A2 | A3/A3+ | A4 | A5 | A6 | A7/A7+ | A8 |
-|----------|--------|---------|----|----|--------|----|----|----|----|----|----|
-| **Point accuracy** | MSE | $\frac{1}{N}\sum(y_i - \hat{y}_i)^2$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ |
-| | MAE | $\frac{1}{N}\sum\|y_i - \hat{y}_i\|$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ |
-| | RMSE | $\sqrt{\text{MSE}}$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ |
-| **Proper scoring** | NLL | $-\frac{1}{N}\sum\log p(y_i\|\mu_i,\sigma_i^2)$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
-| | CRPS | $\sigma[z(2\Phi(z)-1)+2\phi(z)-\pi^{-1/2}]$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
-| **Calibration** | PICP | $\frac{1}{N}\sum\mathbb{1}[y_i \in \text{CI}_i]$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
-| | Cal. Error | $\frac{1}{Q}\sum\|p_q - \hat{p}_q\|$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
-| | PIT | $F(y_i\|\mu_i,\sigma_i^2) \sim U(0,1)$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
-| **Sharpness** | 90% PI width | $\frac{1}{N}\sum(\text{CI}_{\text{upper}} - \text{CI}_{\text{lower}})$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
-| **Uncertainty** | Epistemic fraction | $\frac{\mathbb{V}_{\text{epi}}}{\mathbb{V}_{\text{total}}}$ | $\times$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
-| | Uncertainty-Error Corr. | $\text{Corr}(\sigma_i, \|y_i-\mu_i\|)$ | $\times$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\checkmark$ | $\times$ | $\checkmark$ | $\checkmark$ |
+| Category | Metric | A1 | A2 | A3/A3+ | A4 | A5 | A6 | A7/A7+ | A8 |
+|----------|--------|----|----|----|----|----|----|----|-----|
+| **Point accuracy** | MSE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | MAE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | RMSE | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **Proper scoring** | NLL | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| | CRPS | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| **Calibration** | PICP | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| | Calibration Error | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| | PIT histogram | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| **Sharpness** | 90% PI width | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| **Uncertainty** | Epistemic fraction | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| | Uncertainty-Error Corr. | ✗ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
 
 ---
 
