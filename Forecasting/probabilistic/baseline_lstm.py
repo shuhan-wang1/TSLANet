@@ -10,7 +10,7 @@ from torchmetrics.regression import MeanSquaredError, MeanAbsoluteError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from prob_losses import GaussianNLLLoss
+from prob_losses import GaussianNLLLoss, GaussianCoverageLoss
 
 
 class GaussianLSTM(nn.Module):
@@ -24,6 +24,7 @@ class GaussianLSTM(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
+        self.uncertainty_method = getattr(args, 'uncertainty_method', 'gaussian')
         self.hidden_dim = args.lstm_hidden if hasattr(args, 'lstm_hidden') else 128
         self.num_layers = args.lstm_layers if hasattr(args, 'lstm_layers') else 2
         dropout = args.dropout if hasattr(args, 'dropout') else 0.3
@@ -39,12 +40,16 @@ class GaussianLSTM(nn.Module):
         # Dropout for MC Dropout inference
         self.mc_dropout = nn.Dropout(p=dropout)
 
-        self.mu_head = nn.Linear(self.hidden_dim, args.pred_len)
-        self.log_var_head = nn.Linear(self.hidden_dim, args.pred_len)
+        if self.uncertainty_method == 'evidential':
+            from prob_der import NIGHead
+            self.nig_head = NIGHead(self.hidden_dim, args.pred_len)
+        else:
+            self.mu_head = nn.Linear(self.hidden_dim, args.pred_len)
+            self.log_var_head = nn.Linear(self.hidden_dim, args.pred_len)
 
-        # Same initialization as ProbabilisticTSLANet
-        nn.init.constant_(self.log_var_head.bias, -2.0)
-        nn.init.zeros_(self.log_var_head.weight)
+            # Same initialization as ProbabilisticTSLANet
+            nn.init.constant_(self.log_var_head.bias, -2.0)
+            nn.init.zeros_(self.log_var_head.weight)
 
     def forward(self, x):
         """
@@ -73,19 +78,30 @@ class GaussianLSTM(nn.Module):
         # Apply MC dropout
         last_hidden = self.mc_dropout(last_hidden)
 
-        mu_norm = self.mu_head(last_hidden)          # (B*M, pred_len)
-        log_var_norm = self.log_var_head(last_hidden) # (B*M, pred_len)
-        log_var_norm = torch.clamp(log_var_norm, min=-10.0, max=10.0)
+        if self.uncertainty_method == 'evidential':
+            gamma_norm, nu, alpha, beta_norm = self.nig_head(last_hidden)
 
-        # Rearrange to (B, pred_len, M)
-        mu_norm = rearrange(mu_norm, '(b m) l -> b l m', b=B)
-        log_var_norm = rearrange(log_var_norm, '(b m) l -> b l m', b=B)
+            gamma_norm = rearrange(gamma_norm, '(b m) l -> b l m', b=B)
+            nu = rearrange(nu, '(b m) l -> b l m', b=B)
+            alpha = rearrange(alpha, '(b m) l -> b l m', b=B)
+            beta_norm = rearrange(beta_norm, '(b m) l -> b l m', b=B)
 
-        # Denormalize
-        mu = mu_norm * stdev + means
-        log_var = log_var_norm + 2.0 * torch.log(stdev + 1e-5)
+            gamma = gamma_norm * stdev + means
+            beta = beta_norm * stdev.pow(2)
 
-        return mu, log_var
+            return gamma, nu, alpha, beta
+        else:
+            mu_norm = self.mu_head(last_hidden)          # (B*M, pred_len)
+            log_var_norm = self.log_var_head(last_hidden) # (B*M, pred_len)
+            log_var_norm = torch.clamp(log_var_norm, min=-10.0, max=10.0)
+
+            mu_norm = rearrange(mu_norm, '(b m) l -> b l m', b=B)
+            log_var_norm = rearrange(log_var_norm, '(b m) l -> b l m', b=B)
+
+            mu = mu_norm * stdev + means
+            log_var = log_var_norm + 2.0 * torch.log(stdev + 1e-5)
+
+            return mu, log_var
 
 
 class LSTMModelTraining(L.LightningModule):
@@ -95,11 +111,29 @@ class LSTMModelTraining(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.args = args
+        self.uncertainty_method = getattr(args, 'uncertainty_method', 'gaussian')
 
         self.model = GaussianLSTM(args)
 
-        if args.probabilistic:
+        # --- Coverage loss flag (shared across uncertainty methods) ---
+        self.use_coverage_loss = getattr(args, 'use_coverage_loss', False)
+        self.lambda_coverage = getattr(args, 'lambda_coverage', 0.1)
+
+        if self.uncertainty_method == 'evidential':
+            from prob_der import EvidentialLoss, CoverageLoss
+            self.criterion = EvidentialLoss(
+                lambda_evd=getattr(args, 'lambda_evd', 0.05))
+            self.anneal_epochs = getattr(args, 'anneal_epochs', 5)
+            # Coverage loss for NIG (Student-t CI)
+            if self.use_coverage_loss:
+                self.coverage_loss = CoverageLoss(
+                    target_coverage=getattr(args, 'coverage_target', 0.9))
+        elif args.probabilistic:
             self.criterion = GaussianNLLLoss(reduction='mean')
+            # Coverage loss for Gaussian (Normal CI)
+            if self.use_coverage_loss:
+                self.coverage_loss = GaussianCoverageLoss(
+                    target_coverage=getattr(args, 'coverage_target', 0.9))
         else:
             self.criterion = nn.MSELoss()
 
@@ -133,20 +167,45 @@ class LSTMModelTraining(L.LightningModule):
         batch_x, batch_y, _, _ = batch
         batch_x = batch_x.float()
         batch_y = batch_y.float()
-
-        mu, log_var = self.model(batch_x)
-        mu = mu[:, -self.args.pred_len:, :]
-        log_var = log_var[:, -self.args.pred_len:, :]
         batch_y = batch_y[:, -self.args.pred_len:, :]
 
-        if self.args.probabilistic:
+        if self.uncertainty_method == 'evidential':
+            gamma, nu, alpha, beta = self.model(batch_x)
+            gamma = gamma[:, -self.args.pred_len:, :]
+            nu = nu[:, -self.args.pred_len:, :]
+            alpha = alpha[:, -self.args.pred_len:, :]
+            beta = beta[:, -self.args.pred_len:, :]
+
+            evidence_scale = min(1.0, self.current_epoch / max(1, self.anneal_epochs))
+            loss = self.criterion(gamma, nu, alpha, beta, batch_y, evidence_scale)
+
+            # Optional NIG coverage loss
+            if self.use_coverage_loss:
+                cov_loss = self.coverage_loss(gamma, nu, alpha, beta, batch_y)
+                loss = loss + self.lambda_coverage * cov_loss
+
+            pred = gamma.detach().cpu()
+        elif self.args.probabilistic:
+            mu, log_var = self.model(batch_x)
+            mu = mu[:, -self.args.pred_len:, :]
+            log_var = log_var[:, -self.args.pred_len:, :]
+
             loss = self.criterion(mu, log_var, batch_y)
+
+            # Optional Gaussian coverage loss
+            if self.use_coverage_loss:
+                cov_loss = self.coverage_loss(mu, log_var, batch_y)
+                loss = loss + self.lambda_coverage * cov_loss
+
+            pred = mu.detach().cpu()
         else:
+            mu, log_var = self.model(batch_x)
+            mu = mu[:, -self.args.pred_len:, :]
+
             loss = self.criterion(mu, batch_y)
+            pred = mu.detach().cpu()
 
-        pred = mu.detach().cpu()
         true = batch_y.detach().cpu()
-
         mse = self.mse(pred.contiguous(), true.contiguous())
         mae = self.mae(pred, true)
 
@@ -168,12 +227,21 @@ class LSTMModelTraining(L.LightningModule):
         batch_x = batch_x.float()
         batch_y = batch_y[:, -self.args.pred_len:, :].float()
 
-        mu, log_var = self.model(batch_x)
-        mu = mu[:, -self.args.pred_len:, :]
-        log_var = log_var[:, -self.args.pred_len:, :]
+        if self.uncertainty_method == 'evidential':
+            gamma, nu, alpha, beta = self.model(batch_x)
+            gamma = gamma[:, -self.args.pred_len:, :]
+            self.test_mu.append(gamma.detach().cpu())
+            # Store a synthetic log_var for compatibility
+            ale_var = beta[:, -self.args.pred_len:, :] / (alpha[:, -self.args.pred_len:, :] - 1.0 + 1e-8)
+            self.test_log_var.append(torch.log(ale_var + 1e-8).detach().cpu())
+        else:
+            mu, log_var = self.model(batch_x)
+            mu = mu[:, -self.args.pred_len:, :]
+            log_var = log_var[:, -self.args.pred_len:, :]
 
-        self.test_mu.append(mu.detach().cpu())
-        self.test_log_var.append(log_var.detach().cpu())
+            self.test_mu.append(mu.detach().cpu())
+            self.test_log_var.append(log_var.detach().cpu())
+
         self.test_true.append(batch_y.detach().cpu())
 
     def on_test_epoch_end(self):

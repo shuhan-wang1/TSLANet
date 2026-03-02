@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Bash(xargs ls -lh)",
+      "Bash(xargs grep -l \"Task.*Dynamics.*Generalization\\\\|MixUp.*Label.*Smoothing\\\\|assessed.*component\")",
+      "Bash(xargs grep -l \"Task 1\\\\|Task 2\\\\|assessed\\\\|component\")"
     ]
   }
 }

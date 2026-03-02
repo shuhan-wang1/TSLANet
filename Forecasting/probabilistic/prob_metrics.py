@@ -140,4 +140,19 @@ def compute_all_metrics(results_dict):
         epistemic_var.mean().item() / (total_mean + 1e-8)
     )
 
+    # DER-specific metrics (if NIG parameters are available)
+    if 'der_alpha' in results_dict:
+        alpha = results_dict['der_alpha']
+        nu = results_dict['der_nu']
+        beta = results_dict['der_beta']
+
+        # Mean evidence strength: higher nu = more confident about mean
+        metrics['DER_Mean_Nu'] = nu.mean().item()
+        # Mean shape parameter: higher alpha = more concentrated variance estimate
+        metrics['DER_Mean_Alpha'] = alpha.mean().item()
+        # Mean scale parameter
+        metrics['DER_Mean_Beta'] = beta.mean().item()
+        # Evidence ratio: nu / (nu + 1), approaches 1 when very confident
+        metrics['DER_Evidence_Ratio'] = (nu / (nu + 1.0)).mean().item()
+
     return metrics

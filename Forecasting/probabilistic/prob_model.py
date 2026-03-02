@@ -27,6 +27,7 @@ class ProbabilisticTSLANet(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
+        self.uncertainty_method = getattr(args, 'uncertainty_method', 'gaussian')
         self.patch_size = args.patch_size
         self.stride = self.patch_size // 2
         self.num_patches = int((args.seq_len - self.patch_size) / self.stride + 1)
@@ -40,16 +41,21 @@ class ProbabilisticTSLANet(nn.Module):
             for i in range(args.depth)
         ])
 
-        # Two output heads instead of one
+        # Output heads depend on uncertainty method
         backbone_out_dim = args.emb_dim * self.num_patches
 
-        self.mu_head = nn.Linear(backbone_out_dim, args.pred_len)
+        if self.uncertainty_method == 'evidential':
+            from prob_der import NIGHead
+            self.nig_head = NIGHead(backbone_out_dim, args.pred_len)
+        else:
+            # Gaussian: two output heads (mu + log_var)
+            self.mu_head = nn.Linear(backbone_out_dim, args.pred_len)
 
-        self.log_var_head = nn.Linear(backbone_out_dim, args.pred_len)
-        # Initialize log_var_head so initial sigma is small but nonzero (~0.37)
-        # This prevents NLL explosion at the start of training
-        nn.init.constant_(self.log_var_head.bias, -2.0)
-        nn.init.zeros_(self.log_var_head.weight)
+            self.log_var_head = nn.Linear(backbone_out_dim, args.pred_len)
+            # Initialize log_var_head so initial sigma is small but nonzero (~0.37)
+            # This prevents NLL explosion at the start of training
+            nn.init.constant_(self.log_var_head.bias, -2.0)
+            nn.init.zeros_(self.log_var_head.weight)
 
     def pretrain(self, x_in):
         """Masked patch reconstruction for self-supervised pretraining.
@@ -107,34 +113,51 @@ class ProbabilisticTSLANet(nn.Module):
 
     def forward(self, x):
         """
-        Forward pass producing Gaussian parameters.
+        Forward pass producing distribution parameters.
 
-        Returns:
-            mu: (B, pred_len, M) denormalized predicted means
-            log_var: (B, pred_len, M) denormalized predicted log-variances
+        For Gaussian mode:
+            Returns (mu, log_var) both (B, pred_len, M) denormalized.
 
-        Denormalization of variance:
-            Since instance norm divides by stdev, the real-space variance is
-            var_real = var_norm * stdev^2
-            => log(var_real) = log(var_norm) + 2 * log(stdev)
+        For Evidential mode (DER):
+            Returns (gamma, nu, alpha, beta) all (B, pred_len, M) denormalized.
+            gamma = mean, nu = precision, alpha = shape, beta = scale (NIG params).
+
+        Denormalization:
+            mu/gamma: y_real = y_norm * stdev + mean
+            log_var:  log_var_real = log_var_norm + 2*log(stdev)
+            beta:     beta_real = beta_norm * stdev^2  (scale ~ variance)
+            nu, alpha: dimensionless, no denormalization needed
         """
         features, means, stdev, B, M = self.forward_backbone(x)
 
-        # Mean prediction
-        mu_norm = self.mu_head(features)  # (B*M, pred_len)
+        if self.uncertainty_method == 'evidential':
+            gamma_norm, nu, alpha, beta_norm = self.nig_head(features)
 
-        # Log-variance prediction
-        log_var_norm = self.log_var_head(features)  # (B*M, pred_len)
-        log_var_norm = torch.clamp(log_var_norm, min=-10.0, max=10.0)
+            # Rearrange to (B, pred_len, M)
+            gamma_norm = rearrange(gamma_norm, '(b m) l -> b l m', b=B)
+            nu = rearrange(nu, '(b m) l -> b l m', b=B)
+            alpha = rearrange(alpha, '(b m) l -> b l m', b=B)
+            beta_norm = rearrange(beta_norm, '(b m) l -> b l m', b=B)
 
-        # Rearrange to (B, pred_len, M)
-        mu_norm = rearrange(mu_norm, '(b m) l -> b l m', b=B)
-        log_var_norm = rearrange(log_var_norm, '(b m) l -> b l m', b=B)
+            # Denormalize gamma (same as mu)
+            gamma = gamma_norm * stdev + means
 
-        # Denormalize mu (same as original)
-        mu = mu_norm * stdev + means
+            # Denormalize beta: beta_real = beta_norm * stdev^2
+            # Because beta parameterizes the scale of sigma^2, which scales quadratically
+            beta = beta_norm * stdev.pow(2)
 
-        # Denormalize log_var
-        log_var = log_var_norm + 2.0 * torch.log(stdev + 1e-5)
+            # nu and alpha are dimensionless -- no denormalization needed
+            return gamma, nu, alpha, beta
+        else:
+            # Gaussian path (original)
+            mu_norm = self.mu_head(features)  # (B*M, pred_len)
+            log_var_norm = self.log_var_head(features)  # (B*M, pred_len)
+            log_var_norm = torch.clamp(log_var_norm, min=-10.0, max=10.0)
 
-        return mu, log_var
+            mu_norm = rearrange(mu_norm, '(b m) l -> b l m', b=B)
+            log_var_norm = rearrange(log_var_norm, '(b m) l -> b l m', b=B)
+
+            mu = mu_norm * stdev + means
+            log_var = log_var_norm + 2.0 * torch.log(stdev + 1e-5)
+
+            return mu, log_var

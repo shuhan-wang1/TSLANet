@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 
+# DER single-pass inference (imported from prob_der for discoverability)
+from prob_der import der_predict  # noqa: F401
+
 
 def enable_mc_dropout(model):
     """

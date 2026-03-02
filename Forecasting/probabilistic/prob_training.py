@@ -10,7 +10,7 @@ from torchmetrics.regression import MeanSquaredError, MeanAbsoluteError
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from prob_model import ProbabilisticTSLANet
-from prob_losses import GaussianNLLLoss
+from prob_losses import GaussianNLLLoss, GaussianCoverageLoss
 
 
 class ProbModelPretraining(L.LightningModule):
@@ -66,11 +66,29 @@ class ProbModelTraining(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.args = args
+        self.uncertainty_method = getattr(args, 'uncertainty_method', 'gaussian')
 
         self.model = ProbabilisticTSLANet(args)
 
-        if args.probabilistic:
+        # --- Coverage loss flag (shared across uncertainty methods) ---
+        self.use_coverage_loss = getattr(args, 'use_coverage_loss', False)
+        self.lambda_coverage = getattr(args, 'lambda_coverage', 0.1)
+
+        if self.uncertainty_method == 'evidential':
+            from prob_der import EvidentialLoss, CoverageLoss
+            self.criterion = EvidentialLoss(
+                lambda_evd=getattr(args, 'lambda_evd', 0.05))
+            self.anneal_epochs = getattr(args, 'anneal_epochs', 5)
+            # Coverage loss for NIG (Student-t CI)
+            if self.use_coverage_loss:
+                self.coverage_loss = CoverageLoss(
+                    target_coverage=getattr(args, 'coverage_target', 0.9))
+        elif args.probabilistic:
             self.criterion = GaussianNLLLoss(reduction='mean')
+            # Coverage loss for Gaussian (Normal CI)
+            if self.use_coverage_loss:
+                self.coverage_loss = GaussianCoverageLoss(
+                    target_coverage=getattr(args, 'coverage_target', 0.9))
         else:
             self.criterion = nn.MSELoss()
 
@@ -105,20 +123,42 @@ class ProbModelTraining(L.LightningModule):
         batch_x, batch_y, _, _ = batch
         batch_x = batch_x.float()
         batch_y = batch_y.float()
+        batch_y = batch_y[:, -self.args.pred_len:, :]
 
-        if self.args.probabilistic:
+        if self.uncertainty_method == 'evidential':
+            gamma, nu, alpha, beta = self.model(batch_x)
+            gamma = gamma[:, -self.args.pred_len:, :]
+            nu = nu[:, -self.args.pred_len:, :]
+            alpha = alpha[:, -self.args.pred_len:, :]
+            beta = beta[:, -self.args.pred_len:, :]
+
+            # Evidence annealing: linearly increase evidence contribution
+            evidence_scale = min(1.0, self.current_epoch / max(1, self.anneal_epochs))
+            loss = self.criterion(gamma, nu, alpha, beta, batch_y, evidence_scale)
+
+            # Optional coverage loss
+            if self.use_coverage_loss:
+                cov_loss = self.coverage_loss(gamma, nu, alpha, beta, batch_y)
+                loss = loss + self.lambda_coverage * cov_loss
+
+            pred = gamma.detach().cpu()
+        elif self.args.probabilistic:
             mu, log_var = self.model(batch_x)
             mu = mu[:, -self.args.pred_len:, :]
             log_var = log_var[:, -self.args.pred_len:, :]
-            batch_y = batch_y[:, -self.args.pred_len:, :]
 
             loss = self.criterion(mu, log_var, batch_y)
+
+            # Optional Gaussian coverage loss
+            if self.use_coverage_loss:
+                cov_loss = self.coverage_loss(mu, log_var, batch_y)
+                loss = loss + self.lambda_coverage * cov_loss
+
             pred = mu.detach().cpu()
         else:
             # Deterministic mode: only use mu_head output
             mu, _ = self.model(batch_x)
             mu = mu[:, -self.args.pred_len:, :]
-            batch_y = batch_y[:, -self.args.pred_len:, :]
 
             loss = self.criterion(mu, batch_y)
             pred = mu.detach().cpu()
@@ -145,7 +185,14 @@ class ProbModelTraining(L.LightningModule):
         batch_x = batch_x.float()
         batch_y = batch_y[:, -self.args.pred_len:, :].float()
 
-        if self.args.probabilistic:
+        if self.uncertainty_method == 'evidential':
+            gamma, nu, alpha, beta = self.model(batch_x)
+            gamma = gamma[:, -self.args.pred_len:, :]
+            self.test_mu.append(gamma.detach().cpu())
+            # Store synthetic log_var for on_test_epoch_end compatibility
+            ale_var = beta[:, -self.args.pred_len:, :] / (alpha[:, -self.args.pred_len:, :] - 1.0 + 1e-8)
+            self.test_log_var.append(torch.log(ale_var + 1e-8).detach().cpu())
+        elif self.args.probabilistic:
             mu, log_var = self.model(batch_x)
             mu = mu[:, -self.args.pred_len:, :]
             log_var = log_var[:, -self.args.pred_len:, :]
@@ -166,7 +213,8 @@ class ProbModelTraining(L.LightningModule):
         mae = self.mae(mu_all, true_all)
         print(f"Test MSE: {mse:.6f}, Test MAE: {mae:.6f}")
 
-        if self.args.probabilistic and len(self.test_log_var) > 0:
+        if (self.uncertainty_method == 'evidential' or self.args.probabilistic) \
+                and len(self.test_log_var) > 0:
             log_var_all = torch.cat(self.test_log_var)
             nll_fn = GaussianNLLLoss(reduction='mean', include_constant=True)
             nll = nll_fn(mu_all, log_var_all, true_all)
