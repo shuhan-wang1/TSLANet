@@ -59,37 +59,55 @@ TSLANet (Eldele et al., ICML 2024) is a lightweight convolutional model for time
 
 Input $\mathbf{x} \in \mathbb{R}^{B \times L \times M}$ is first normalized per-sample (RevIN-style):
 
-$$\bar{\mathbf{x}} = \frac{\mathbf{x} - \boldsymbol{\mu}_{\text{inst}}}{\boldsymbol{\sigma}_{\text{inst}}}, \quad \boldsymbol{\mu}_{\text{inst}} = \frac{1}{L}\sum_{t=1}^{L} x_t, \quad \boldsymbol{\sigma}_{\text{inst}} = \sqrt{\frac{1}{L}\sum_{t=1}^{L}(x_t - \boldsymbol{\mu}_{\text{inst}})^2 + \epsilon}$$
+$$
+\bar{\mathbf{x}} = \frac{\mathbf{x} - \boldsymbol{\mu}_{\text{inst}}}{\boldsymbol{\sigma}_{\text{inst}}}, \quad \boldsymbol{\mu}_{\text{inst}} = \frac{1}{L}\sum_{t=1}^{L} x_t, \quad \boldsymbol{\sigma}_{\text{inst}} = \sqrt{\frac{1}{L}\sum_{t=1}^{L}(x_t - \boldsymbol{\mu}_{\text{inst}})^2 + \epsilon}
+$$
 
 Then, the sequence is unfolded into overlapping patches with `stride = patch_size / 2` and linearly embedded:
 
-$$\mathbf{X}_{\text{patches}} = \text{Unfold}(\bar{\mathbf{x}}, \text{patch\_size}, \text{stride}), \quad \mathbf{H}^{(0)} = \mathbf{X}_{\text{patches}} \mathbf{W}_{\text{embed}} + \mathbf{b}_{\text{embed}}$$
+$$
+\mathbf{X}_{\text{patches}} = \text{Unfold}(\bar{\mathbf{x}}, \text{patch-size}, \text{stride}), \quad \mathbf{H}^{(0)} = \mathbf{X}_{\text{patches}} \mathbf{W}_{\text{embed}} + \mathbf{b}_{\text{embed}}
+$$
 
 ### 2.2 Adaptive Spectral Block (ASB)
 
 The ASB operates in the frequency domain via the Discrete Fourier Transform. Given input $\mathbf{H} \in \mathbb{R}^{N \times D}$ (where $N$ = num\_patches, $D$ = emb\_dim):
 
-$$\hat{\mathbf{H}} = \text{FFT}(\mathbf{H}), \quad \hat{\mathbf{H}}_{\text{weighted}} = \hat{\mathbf{H}} \odot \mathbf{W}_{\text{freq}}$$
+$$
+\hat{\mathbf{H}} = \text{FFT}(\mathbf{H}), \quad \hat{\mathbf{H}}_{\text{weighted}} = \hat{\mathbf{H}} \odot \mathbf{W}_{\text{freq}}
+$$
 
 where $\mathbf{W}_{\text{freq}} \in \mathbb{C}^{D}$ is a learnable complex-valued weight. An **adaptive high-frequency mask** $\mathbf{M}$ is computed from the energy spectrum:
 
-$$E_f = \|\hat{\mathbf{H}}_f\|^2, \quad \tilde{E}_f = \frac{E_f}{\text{median}(\{E_f\}) + \epsilon}$$
+$$
+E_f = \|\hat{\mathbf{H}}_f\|^2, \quad \tilde{E}_f = \frac{E_f}{\text{median}(\{E_f\}) + \epsilon}
+$$
 
-$$M_f = \mathbb{1}\left[\tilde{E}_f > \tau\right], \quad \hat{\mathbf{H}}_{\text{high}} = (\hat{\mathbf{H}} \odot \mathbf{M}) \odot \mathbf{W}_{\text{high}}$$
+$$
+M_f = \mathbb{1}\left[\tilde{E}_f > \tau\right], \quad \hat{\mathbf{H}}_{\text{high}} = (\hat{\mathbf{H}} \odot \mathbf{M}) \odot \mathbf{W}_{\text{high}}
+$$
 
 where $\tau$ is a learnable threshold parameter and $\mathbf{W}_{\text{high}}$ is a second set of complex weights. The final output is:
 
-$$\mathbf{H}_{\text{ASB}} = \text{IFFT}\left(\hat{\mathbf{H}}_{\text{weighted}} + \hat{\mathbf{H}}_{\text{high}}\right)$$
+$$
+\mathbf{H}_{\text{ASB}} = \text{IFFT}\left(\hat{\mathbf{H}}_{\text{weighted}} + \hat{\mathbf{H}}_{\text{high}}\right)
+$$
 
 ### 2.3 Interactive Convolution Block (ICB)
 
 The ICB uses two parallel 1D convolution branches with **cross-branch interaction**:
 
-$$\mathbf{z}_1 = \text{Conv}_{1\times 1}(\mathbf{H}), \quad \mathbf{z}_2 = \text{Conv}_{3\times 1}(\mathbf{H})$$
+$$
+\mathbf{z}_1 = \text{Conv}_{1\times 1}(\mathbf{H}), \quad \mathbf{z}_2 = \text{Conv}_{3\times 1}(\mathbf{H})
+$$
 
-$$\mathbf{o}_1 = \mathbf{z}_1 \odot \text{Dropout}(\text{GELU}(\mathbf{z}_2)), \quad \mathbf{o}_2 = \mathbf{z}_2 \odot \text{Dropout}(\text{GELU}(\mathbf{z}_1))$$
+$$
+\mathbf{o}_1 = \mathbf{z}_1 \odot \text{Dropout}(\text{GELU}(\mathbf{z}_2)), \quad \mathbf{o}_2 = \mathbf{z}_2 \odot \text{Dropout}(\text{GELU}(\mathbf{z}_1))
+$$
 
-$$\mathbf{H}_{\text{ICB}} = \text{Conv}_{1\times 1}(\mathbf{o}_1 + \mathbf{o}_2)$$
+$$
+\mathbf{H}_{\text{ICB}} = \text{Conv}_{1\times 1}(\mathbf{o}_1 + \mathbf{o}_2)
+$$
 
 The element-wise cross-multiplication $\mathbf{z}_1 \odot g(\mathbf{z}_2)$ and $\mathbf{z}_2 \odot g(\mathbf{z}_1)$ enables information interaction between the pointwise (global channel mixing) and local (temporal context) branches.
 
@@ -97,11 +115,15 @@ The element-wise cross-multiplication $\mathbf{z}_1 \odot g(\mathbf{z}_2)$ and $
 
 Each TSLANet layer combines ASB and ICB with residual connections:
 
-$$\mathbf{H}^{(\ell+1)} = \mathbf{H}^{(\ell)} + \text{DropPath}\left(\text{ICB}\left(\text{LN}\left(\text{ASB}\left(\text{LN}(\mathbf{H}^{(\ell)})\right)\right)\right)\right)$$
+$$
+\mathbf{H}^{(\ell+1)} = \mathbf{H}^{(\ell)} + \text{DropPath}\left(\text{ICB}\left(\text{LN}\left(\text{ASB}\left(\text{LN}(\mathbf{H}^{(\ell)})\right)\right)\right)\right)
+$$
 
 The final output is a single linear head, followed by **denormalization**:
 
-$$\hat{\mathbf{y}} = \mathbf{W}_{\text{out}} \cdot \text{flatten}(\mathbf{H}^{(L)}) + \mathbf{b}_{\text{out}}, \quad \hat{\mathbf{y}}_{\text{real}} = \hat{\mathbf{y}} \cdot \boldsymbol{\sigma}_{\text{inst}} + \boldsymbol{\mu}_{\text{inst}}$$
+$$
+\hat{\mathbf{y}} = \mathbf{W}_{\text{out}} \cdot \text{flatten}(\mathbf{H}^{(L)}) + \mathbf{b}_{\text{out}}, \quad \hat{\mathbf{y}}_{\text{real}} = \hat{\mathbf{y}} \cdot \boldsymbol{\sigma}_{\text{inst}} + \boldsymbol{\mu}_{\text{inst}}
+$$
 
 **The original TSLANet is trained with MSE loss:** $\mathcal{L}_{\text{MSE}} = \frac{1}{T}\sum_{t=1}^{T}(y_t - \hat{y}_t)^2$
 
@@ -115,19 +137,27 @@ $$\hat{\mathbf{y}} = \mathbf{W}_{\text{out}} \cdot \text{flatten}(\mathbf{H}^{(L
 
 **What changed:** The original TSLANet has a **single linear output head** producing point predictions. We replace this with **dual output heads** that predict both mean and input-dependent (heteroscedastic) variance:
 
-$$\boldsymbol{\mu}_t(\mathbf{x}) = \mathbf{W}_{\mu} \cdot \text{flatten}(\mathbf{H}^{(L)}) + \mathbf{b}_{\mu}$$
+$$
+\boldsymbol{\mu}_t(\mathbf{x}) = \mathbf{W}_{\mu} \cdot \text{flatten}(\mathbf{H}^{(L)}) + \mathbf{b}_{\mu}
+$$
 
-$$\log \sigma_t^2(\mathbf{x}) = \mathbf{W}_{\log\sigma^2} \cdot \text{flatten}(\mathbf{H}^{(L)}) + \mathbf{b}_{\log\sigma^2}$$
+$$
+\log \sigma_t^2(\mathbf{x}) = \mathbf{W}_{\log\sigma^2} \cdot \text{flatten}(\mathbf{H}^{(L)}) + \mathbf{b}_{\log\sigma^2}
+$$
 
 The log-variance head is initialized with bias $= -2.0$ (corresponding to $\sigma \approx 0.37$) to prevent NLL explosion at training start. Log-variance is clamped to $[-10, 10]$ for numerical stability.
 
 **Training loss** is the Gaussian Negative Log-Likelihood (NLL):
 
-$$\mathcal{L}_{\text{NLL}}(\theta) = \frac{1}{T}\sum_{t=1}^{T}\left[\frac{1}{2}\log\sigma_t^2 + \frac{(y_t - \mu_t)^2}{2\sigma_t^2}\right]$$
+$$
+\mathcal{L}_{\text{NLL}}(\theta) = \frac{1}{T}\sum_{t=1}^{T}\left[\frac{1}{2}\log\sigma_t^2 + \frac{(y_t - \mu_t)^2}{2\sigma_t^2}\right]
+$$
 
 **Denormalization for variance:** Since the model operates on normalized inputs, the predicted variance must be denormalized by scaling quadratically with the instance standard deviation:
 
-$$\log\sigma^2_{\text{real}} = \log\sigma^2_{\text{norm}} + 2\log(\boldsymbol{\sigma}_{\text{inst}})$$
+$$
+\log\sigma^2_{\text{real}} = \log\sigma^2_{\text{norm}} + 2\log(\boldsymbol{\sigma}_{\text{inst}})
+$$
 
 This is because if $\hat{y}_{\text{real}} = \hat{y}_{\text{norm}} \cdot \sigma_{\text{inst}}$, then $\text{Var}[\hat{y}_{\text{real}}] = \sigma^2_{\text{inst}} \cdot \text{Var}[\hat{y}_{\text{norm}}]$.
 
@@ -143,53 +173,81 @@ This is because if $\hat{y}_{\text{real}} = \hat{y}_{\text{norm}} \cdot \sigma_{
 
 The NIG prior places a conjugate prior over the Gaussian likelihood parameters $(\mu, \sigma^2)$:
 
-$$p(\mu, \sigma^2) = \text{NIG}(\gamma, \nu, \alpha, \beta)$$
+$$
+p(\mu, \sigma^2) = \text{NIG}(\gamma, \nu, \alpha, \beta)
+$$
 
 which factorizes as:
 
-$$p(\mu \mid \sigma^2) = \mathcal{N}\left(\mu;\; \gamma,\; \frac{\sigma^2}{\nu}\right), \quad p(\sigma^2) = \text{Inverse-Gamma}(\alpha, \beta)$$
+$$
+p(\mu \mid \sigma^2) = \mathcal{N}\left(\mu;\; \gamma,\; \frac{\sigma^2}{\nu}\right), \quad p(\sigma^2) = \text{Inverse-Gamma}(\alpha, \beta)
+$$
 
 where $\gamma \in \mathbb{R}$, $\nu > 0$, $\alpha > 1$, $\beta > 0$ are the four NIG parameters.
 
 **NIGHead architecture** (replacing the single linear layer):
 
-$$\gamma = \mathbf{W}_{\gamma} h + \mathbf{b}_{\gamma} \quad \text{(unconstrained)}$$
+$$
+\gamma = \mathbf{W}_{\gamma} h + \mathbf{b}_{\gamma} \quad \text{(unconstrained)}
+$$
 
-$$\nu = \text{Softplus}(\mathbf{W}_{\nu} h + \mathbf{b}_{\nu}) + \epsilon$$
+$$
+\nu = \text{Softplus}(\mathbf{W}_{\nu} h + \mathbf{b}_{\nu}) + \epsilon
+$$
 
-$$\alpha = \text{Softplus}(\mathbf{W}_{\alpha} h + \mathbf{b}_{\alpha}) + 1 + \epsilon$$
+$$
+\alpha = \text{Softplus}(\mathbf{W}_{\alpha} h + \mathbf{b}_{\alpha}) + 1 + \epsilon
+$$
 
-$$\beta = \text{Softplus}(\mathbf{W}_{\beta} h + \mathbf{b}_{\beta}) + \epsilon$$
+$$
+\beta = \text{Softplus}(\mathbf{W}_{\beta} h + \mathbf{b}_{\beta}) + \epsilon
+$$
 
 These constraints ensure mathematical validity of the NIG distribution: $\nu > 0$ (positive precision), $\alpha > 1$ (finite variance for the inverse-gamma), $\beta > 0$ (positive scale).
 
 **Closed-form uncertainty decomposition** (no sampling required):
 
-$$\mathbb{E}[y \mid \mathbf{x}] = \gamma$$
+$$
+\mathbb{E}[y \mid \mathbf{x}] = \gamma
+$$
 
-$$\text{Aleatoric uncertainty} = \mathbb{E}[\sigma^2 \mid \mathbf{x}] = \frac{\beta}{\alpha - 1}$$
+$$
+\text{Aleatoric uncertainty} = \mathbb{E}[\sigma^2 \mid \mathbf{x}] = \frac{\beta}{\alpha - 1}
+$$
 
-$$\text{Epistemic uncertainty} = \text{Var}[\mu \mid \mathbf{x}] = \frac{\beta}{(\alpha - 1)\nu}$$
+$$
+\text{Epistemic uncertainty} = \text{Var}[\mu \mid \mathbf{x}] = \frac{\beta}{(\alpha - 1)\nu}
+$$
 
-$$\text{Total variance} = \frac{\beta(\nu + 1)}{(\alpha - 1)\nu}$$
+$$
+\text{Total variance} = \frac{\beta(\nu + 1)}{(\alpha - 1)\nu}
+$$
 
 **NIG Negative Log-Likelihood:**
 
-$$\mathcal{L}_{\text{NLL}}^{\text{NIG}} = \frac{1}{2}\log\frac{\pi}{\nu} - \alpha\log\Omega + \left(\alpha + \frac{1}{2}\right)\log\left[(y - \gamma)^2\nu + \Omega\right] + \log\frac{\Gamma(\alpha)}{\Gamma(\alpha + \frac{1}{2})}$$
+$$
+\mathcal{L}_{\text{NLL}}^{\text{NIG}} = \frac{1}{2}\log\frac{\pi}{\nu} - \alpha\log\Omega + \left(\alpha + \frac{1}{2}\right)\log\left[(y - \gamma)^2\nu + \Omega\right] + \log\frac{\Gamma(\alpha)}{\Gamma(\alpha + \frac{1}{2})}
+$$
 
 where $\Omega = 2\beta(1 + \nu)$.
 
 **Evidence Regularization** (penalizes confident wrong predictions):
 
-$$\mathcal{L}_{\text{reg}} = |y - \gamma| \cdot (2\nu + \alpha)$$
+$$
+\mathcal{L}_{\text{reg}} = |y - \gamma| \cdot (2\nu + \alpha)
+$$
 
 **Total evidential loss:**
 
-$$\mathcal{L}_{\text{EDL}} = \mathcal{L}_{\text{NLL}}^{\text{NIG}} + \lambda_{\text{evd}} \cdot \text{evidence\_scale}(t) \cdot \mathcal{L}_{\text{reg}}$$
+$$
+\mathcal{L}_{\text{EDL}} = \mathcal{L}_{\text{NLL}}^{\text{NIG}} + \lambda_{\text{evd}} \cdot \text{evidence-scale}(t) \cdot \mathcal{L}_{\text{reg}}
+$$
 
 **DER denormalization:** Since $\beta$ is a scale parameter for variance, it scales quadratically with the instance standard deviation:
 
-$$\gamma_{\text{real}} = \gamma_{\text{norm}} \cdot \sigma_{\text{inst}} + \mu_{\text{inst}}, \quad \beta_{\text{real}} = \beta_{\text{norm}} \cdot \sigma_{\text{inst}}^2$$
+$$
+\gamma_{\text{real}} = \gamma_{\text{norm}} \cdot \sigma_{\text{inst}} + \mu_{\text{inst}}, \quad \beta_{\text{real}} = \beta_{\text{norm}} \cdot \sigma_{\text{inst}}^2
+$$
 
 The parameters $\nu$ and $\alpha$ are dimensionless and require no denormalization.
 
@@ -203,11 +261,13 @@ The parameters $\nu$ and $\alpha$ are dimensionless and require no denormalizati
 
 **What changed:** We introduce an evidence annealing schedule that linearly scales the regularization strength during training:
 
-$$\text{evidence\_scale}(t) = \min\left(1.0,\; \frac{t}{T_{\text{anneal}}}\right)$$
+$$
+\text{evidence-scale}(t) = \min\left(1.0,\; \frac{t}{T_{\text{anneal}}}\right)
+$$
 
 where $t$ is the current epoch and $T_{\text{anneal}}$ is the annealing period (default 5 epochs).
 
-**Why this matters:** Early in training, when learned representations are still unstable, the model may place excessive confidence in poor predictions. The annealing schedule starts with zero regularization ($\text{evidence\_scale} = 0$), allowing the model to first learn accurate mean predictions, then gradually introduces the evidence penalty to encourage proper calibration. This prevents **evidence collapse** — a common failure mode in Evidential Deep Learning where the model generates overly confident predictions before meaningful patterns are learned.
+**Why this matters:** Early in training, when learned representations are still unstable, the model may place excessive confidence in poor predictions. The annealing schedule starts with zero regularization ($\text{evidence-scale} = 0$), allowing the model to first learn accurate mean predictions, then gradually introduces the evidence penalty to encourage proper calibration. This prevents **evidence collapse** — a common failure mode in Evidential Deep Learning where the model generates overly confident predictions before meaningful patterns are learned.
 
 Unlike Sensoy et al. (2018) who anneal the KL regularization weight, ProbFM and our implementation directly anneal the evidence contribution during optimization, providing more direct control over evidence accumulation.
 
@@ -219,15 +279,21 @@ Unlike Sensoy et al. (2018) who anneal the KL regularization weight, ProbFM and 
 
 **What changed:** We add a differentiable **Prediction Interval Coverage Probability (PICP)** loss that directly optimizes calibration:
 
-$$\mathcal{L}_{\text{coverage}} = \left|\text{PICP}_{\text{target}} - \text{PICP}_{\text{actual}}\right|$$
+$$
+\mathcal{L}_{\text{coverage}} = \left|\text{PICP}_{\text{target}} - \text{PICP}_{\text{actual}}\right|
+$$
 
 where $\text{PICP}_{\text{target}}$ is the desired coverage probability (e.g., 0.9 for 90% prediction intervals) and:
 
-$$\text{PICP}_{\text{actual}} = \frac{1}{N}\sum_{i=1}^{N}\mathbb{1}\left[y_i \in [\text{CI}_{\text{lower},i},\; \text{CI}_{\text{upper},i}]\right]$$
+$$
+\text{PICP}_{\text{actual}} = \frac{1}{N}\sum_{i=1}^{N}\mathbb{1}\left[y_i \in [\text{CI}_{\text{lower},i},\; \text{CI}_{\text{upper},i}]\right]
+$$
 
 Since the indicator function $\mathbb{1}[\cdot]$ is non-differentiable, we use a **sigmoid soft approximation**:
 
-$$\text{soft\_covered}_i = \sigma\left(s \cdot (y_i - \text{CI}_{\text{lower},i})\right) \cdot \sigma\left(s \cdot (\text{CI}_{\text{upper},i} - y_i)\right)$$
+$$
+\text{soft-covered}_i = \sigma\left(s \cdot (y_i - \text{CI}_{\text{lower},i})\right) \cdot \sigma\left(s \cdot (\text{CI}_{\text{upper},i} - y_i)\right)
+$$
 
 where $s$ is a sharpness parameter (default 10.0) controlling the sigmoid steepness.
 
@@ -242,7 +308,9 @@ where $z = \Phi^{-1}\left(\frac{1 + \text{coverage}}{2}\right)$ is the quantile 
 
 **Combined training objective (works with both modes):**
 
-$$\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{base}} + \lambda_{\text{coverage}} \cdot \mathcal{L}_{\text{coverage}}$$
+$$
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{base}} + \lambda_{\text{coverage}} \cdot \mathcal{L}_{\text{coverage}}
+$$
 
 where $\mathcal{L}_{\text{base}}$ is either $\mathcal{L}_{\text{EDL}}$ (for DER) or $\mathcal{L}_{\text{NLL}}^{\text{Gaussian}}$ (for Gaussian mode).
 
@@ -261,19 +329,29 @@ Unlike post-hoc calibration methods (e.g., temperature scaling, Platt scaling) t
 
 **What changed:** We leverage the existing dropout in TSLANet's ICB blocks to perform approximate Bayesian inference at test time. During inference, dropout remains **enabled** and $K$ stochastic forward passes are performed:
 
-$$\{\boldsymbol{\mu}_k(\mathbf{x}), \log\sigma^2_k(\mathbf{x})\}_{k=1}^{K} \sim q(\boldsymbol{\theta})$$
+$$
+\{\boldsymbol{\mu}_k(\mathbf{x}), \log\sigma^2_k(\mathbf{x})\}_{k=1}^{K} \sim q(\boldsymbol{\theta})
+$$
 
 where $q(\boldsymbol{\theta})$ is the approximate posterior induced by dropout.
 
 **Uncertainty decomposition:**
 
-$$\text{Predictive mean: } \bar{\boldsymbol{\mu}} = \frac{1}{K}\sum_{k=1}^{K}\boldsymbol{\mu}_k(\mathbf{x})$$
+$$
+\text{Predictive mean: } \bar{\boldsymbol{\mu}} = \frac{1}{K}\sum_{k=1}^{K}\boldsymbol{\mu}_k(\mathbf{x})
+$$
 
-$$\text{Aleatoric variance: } \mathbb{V}_{\text{ale}} = \frac{1}{K}\sum_{k=1}^{K}\sigma^2_k(\mathbf{x})$$
+$$
+\text{Aleatoric variance: } \mathbb{V}_{\text{ale}} = \frac{1}{K}\sum_{k=1}^{K}\sigma^2_k(\mathbf{x})
+$$
 
-$$\text{Epistemic variance: } \mathbb{V}_{\text{epi}} = \frac{1}{K}\sum_{k=1}^{K}\left(\boldsymbol{\mu}_k(\mathbf{x}) - \bar{\boldsymbol{\mu}}\right)^2$$
+$$
+\text{Epistemic variance: } \mathbb{V}_{\text{epi}} = \frac{1}{K}\sum_{k=1}^{K}\left(\boldsymbol{\mu}_k(\mathbf{x}) - \bar{\boldsymbol{\mu}}\right)^2
+$$
 
-$$\text{Total variance: } \mathbb{V}_{\text{total}} = \mathbb{V}_{\text{ale}} + \mathbb{V}_{\text{epi}}$$
+$$
+\text{Total variance: } \mathbb{V}_{\text{total}} = \mathbb{V}_{\text{ale}} + \mathbb{V}_{\text{epi}}
+$$
 
 This is a natural fit for TSLANet since the ICB already contains dropout layers, meaning **no architectural modifications are required** — only the inference procedure changes.
 
@@ -285,11 +363,15 @@ This is a natural fit for TSLANet since the ICB already contains dropout layers,
 
 **What changed:** We train $M$ independently initialized TSLANet models (different random seeds) and combine their predictions as a mixture of Gaussians:
 
-$$p(y \mid \mathbf{x}) = \frac{1}{M}\sum_{m=1}^{M}\mathcal{N}\left(y;\; \mu_m(\mathbf{x}),\; \sigma^2_m(\mathbf{x})\right)$$
+$$
+p(y \mid \mathbf{x}) = \frac{1}{M}\sum_{m=1}^{M}\mathcal{N}\left(y;\; \mu_m(\mathbf{x}),\; \sigma^2_m(\mathbf{x})\right)
+$$
 
 The uncertainty decomposition follows the same law of total variance as MC Dropout:
 
-$$\bar{\boldsymbol{\mu}} = \frac{1}{M}\sum_{m=1}^{M}\boldsymbol{\mu}_m, \quad \mathbb{V}_{\text{ale}} = \frac{1}{M}\sum_{m=1}^{M}\sigma^2_m, \quad \mathbb{V}_{\text{epi}} = \frac{1}{M}\sum_{m=1}^{M}(\boldsymbol{\mu}_m - \bar{\boldsymbol{\mu}})^2$$
+$$
+\bar{\boldsymbol{\mu}} = \frac{1}{M}\sum_{m=1}^{M}\boldsymbol{\mu}_m, \quad \mathbb{V}_{\text{ale}} = \frac{1}{M}\sum_{m=1}^{M}\sigma^2_m, \quad \mathbb{V}_{\text{epi}} = \frac{1}{M}\sum_{m=1}^{M}(\boldsymbol{\mu}_m - \bar{\boldsymbol{\mu}})^2
+$$
 
 ---
 
@@ -299,7 +381,9 @@ $$\bar{\boldsymbol{\mu}} = \frac{1}{M}\sum_{m=1}^{M}\boldsymbol{\mu}_m, \quad \m
 
 **What changed:** In addition to NLL, we implement the **Continuous Ranked Probability Score (CRPS)** — a strictly proper scoring rule that simultaneously rewards calibration and sharpness. For Gaussian predictive distributions, CRPS has an analytic form:
 
-$$\text{CRPS}(\mu, \sigma, y) = \sigma\left[z\left(2\Phi(z) - 1\right) + 2\phi(z) - \frac{1}{\sqrt{\pi}}\right]$$
+$$
+\text{CRPS}(\mu, \sigma, y) = \sigma\left[z\left(2\Phi(z) - 1\right) + 2\phi(z) - \frac{1}{\sqrt{\pi}}\right]
+$$
 
 where $z = \frac{y - \mu}{\sigma}$, $\Phi(\cdot)$ is the standard normal CDF, and $\phi(\cdot)$ is the standard normal PDF.
 
