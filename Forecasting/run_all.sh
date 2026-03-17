@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run all 8 experiments: 4 configs x 2 pred_lens
-# Usage: cd Forecasting && bash scripts/run_all.sh
+# Usage: cd Forecasting && bash run_all.sh
 
 COMMON="--data custom --root_path data/weather --data_path weather.csv \
   --features M --seq_len 96 --emb_dim 32 --depth 2 --patch_size 16 \
