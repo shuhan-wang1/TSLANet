@@ -7,7 +7,11 @@
       "Bash(xargs grep -l \"Task 1\\\\|Task 2\\\\|assessed\\\\|component\")",
       "Bash(python fix_readme.py)",
       "Bash(del fix_readme.py)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Bash(find ~/Desktop -name *metrics*)",
+      "WebSearch",
+      "WebFetch(domain:paperswithcode.com)",
+      "WebFetch(domain:arxiv.org)"
     ]
   }
 }
