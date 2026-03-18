@@ -8,7 +8,7 @@ COMMON="--data custom --root_path data/weather --data_path weather.csv \
   --dropout 0.3 --batch_size 32 --pretrain_epochs 5 --train_epochs 15 --seed 42 \
   --probabilistic True --mc_dropout True --aux_mse_weight 0.3"
 
-for pred_len in 96 336; do
+for pred_len in 336; do
   echo "--- A7: NLL + Aux MSE (weight=0.3) + MC Dropout, pred_len=$pred_len ---"
   python train.py $COMMON --pred_len $pred_len --save_dir saved_models
   LATEST=$(ls -td saved_models/*prob_auxmse*mc*pl${pred_len}* 2>/dev/null | head -1)
