@@ -1,5 +1,5 @@
 __pycache__/
 *.pyc
-saved_models/
+**/*.pt
 *.egg-info/
 .DS_Store

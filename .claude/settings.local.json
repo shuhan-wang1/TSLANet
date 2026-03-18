@@ -12,7 +12,9 @@
       "WebSearch",
       "WebFetch(domain:paperswithcode.com)",
       "WebFetch(domain:arxiv.org)",
-      "Bash(grep -rh \"^import\\\\|^from\" /Users/senorita/Desktop/TSLANet-new/Forecasting/*.py)"
+      "Bash(grep -rh \"^import\\\\|^from\" /Users/senorita/Desktop/TSLANet-new/Forecasting/*.py)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
