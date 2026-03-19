@@ -25,7 +25,10 @@
       "Bash(mv weather_prob_auxmse0.3_nomc_pl96_20260317_060556 A5_pl96)",
       "Bash(mv weather_prob_auxmse0.3_nomc_pl336_20260317_195918 A5_pl336)",
       "Bash(mv weather_prob_twostage_nomc_pl96_20260317_081710 A6_pl96)",
-      "Bash(mv weather_prob_twostage_nomc_pl336_20260317_230534 A6_pl336)"
+      "Bash(mv weather_prob_twostage_nomc_pl336_20260317_230534 A6_pl336)",
+      "Bash(ls /Users/senorita/Desktop/TSLANet-new/Forecasting/*.sh)",
+      "Bash(mv weather_prob_auxmse0.3_mc_pl96_20260319_053319 A7_pl96)",
+      "Bash(mv weather_prob_auxmse0.3_mc_pl336_20260319_064718 A7_pl336)"
     ]
   }
 }
