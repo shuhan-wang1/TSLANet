@@ -12,8 +12,15 @@ Usage:
 All helper modules (model, data loading, inference, metrics, visualisation)
 are embedded in this single file.
 
-GenAI Statement: GitHub Copilot and Claude were used in an assistive role
-for code restructuring and documentation. All logic was verified manually.
+GenAI Statement: Claude was used in an assistive role during development.
+We first studied the original TSLANet paper (Eldele et al., ICML 2024) and
+its reference implementation, then independently designed the algorithms to
+extend TSLANet into a probabilistic forecasting model (Gaussian likelihood
+heads, MC Dropout for epistemic uncertainty, calibration metrics, etc.).
+Claude was used only to assist with debugging and fixing errors encountered
+during this extension, as well as code restructuring and documentation.
+All core algorithmic design decisions and logic were made by us and
+verified manually.
 """
 
 import argparse
