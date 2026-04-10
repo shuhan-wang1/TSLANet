@@ -78,7 +78,7 @@ At test time, we run `K` stochastic forward passes with dropout enabled (only `n
 - **Aleatoric variance** = mean of predicted variances across K passes (Gaussian mode) or 0 (deterministic mode)
 - **Total variance** = epistemic + aleatoric
 
-### 3.3 Four Experimental Configurations
+### 3.3 Seven Experimental Configurations
 
 | Config | Loss | MC Dropout | Aleatoric | Epistemic | Description |
 |--------|------|------------|-----------|-----------|-------------|
@@ -86,6 +86,9 @@ At test time, we run `K` stochastic forward passes with dropout enabled (only `n
 | **A2** | MSE | Yes | - | Yes | Epistemic only via MC Dropout |
 | **A3** | Gaussian NLL | No | Yes | - | Aleatoric only via Gaussian heads |
 | **A4** | Gaussian NLL | Yes | Yes | Yes | Full uncertainty decomposition |
+| **A5** | Gaussian NLL + Aux MSE (0.3) | No | Yes | - | Aleatoric with auxiliary MSE regularisation |
+| **A6** | Two-stage (MSE → NLL) | No | Yes | - | Two-stage training: MSE on backbone+mu_head, then NLL on log_var_head |
+| **A7** | Gaussian NLL + Aux MSE (0.3) | Yes | Yes | Yes | Full uncertainty with auxiliary MSE regularisation |
 
 ---
 
@@ -93,26 +96,24 @@ At test time, we run `K` stochastic forward passes with dropout enabled (only `n
 
 ```
 Forecasting/
-├── train.py            # Trains model, saves weights. Handles pretraining + fine-tuning.
-├── test.py             # Loads saved model, produces metrics JSON + plots.
-├── model.py            # ProbabilisticTSLANet (single class, supports det + prob modes)
-├── losses.py           # GaussianNLLLoss only (~18 lines)
-├── inference.py        # 3 functions: deterministic_predict, gaussian_predict, mc_dropout_predict
-├── metrics.py          # compute_nll, compute_crps, compute_calibration, compute_all_metrics
-├── visualization.py    # 5 plot functions + generate_all_plots
-├── data_factory.py     # Data provider factory
-├── data_loader.py      # Dataset classes (ETT + Custom), numpy-based StandardScaler
-├── timefeatures.py     # Time feature extraction (from GluonTS)
-├── utils.py            # random_masking_3D, str2bool, DropPath, trunc_normal_
-├── scripts/
-│   └── run_all.sh      # Runs all 8 experiments (4 configs × 2 pred_lens)
-└── saved_models/       # Created by train.py at runtime
+├── train.py            # Training script (all modules embedded)
+├── test.py             # Testing & evaluation script (all modules embedded)
+├── run_all.sh          # Runs all 14 experiments (7 configs × 2 pred_lens)
+├── instruction.pdf     # Reproduction instructions
+├── data/
+│   └── weather/
+│       └── weather.csv # Weather dataset
+└── saved_models/       # Trained model weights, configs, metrics and plots
+    ├── A1_pl96/
+    ├── A1_pl336/
+    ├── ...
+    └── A7_pl336/
 ```
 
 ### Design Decisions
 
-- **No global args:** Every class receives `args` via constructor — no fragile module-level globals
-- **No external ML dependencies:** `DropPath` and `trunc_normal_` are embedded directly (~25 lines) instead of importing from `timm`; `StandardScaler` uses numpy instead of `sklearn`
+- **Monolithic scripts:** All helper modules (model architecture, data loading, losses, inference, metrics, visualisation) are embedded directly within `train.py` and `test.py` for ease of submission
+- **No external ML dependencies:** `DropPath` and `trunc_normal_` are embedded directly instead of importing from `timm`; `StandardScaler` uses numpy instead of `sklearn`
 - **Pure PyTorch training:** No Lightning — plain training loop with manual best-model tracking
 - **JSON output:** Results saved as JSON, not Excel
 
@@ -122,16 +123,22 @@ Forecasting/
 
 All experiments run on the **Weather dataset** with two prediction horizons:
 
-| Experiment | Config | pred_len | Probabilistic | MC Dropout |
-|------------|--------|----------|---------------|------------|
-| 1 | A1 | 96 | False | False |
-| 2 | A2 | 96 | False | True |
-| 3 | A3 | 96 | True | False |
-| 4 | A4 | 96 | True | True |
-| 5 | A1 | 336 | False | False |
-| 6 | A2 | 336 | False | True |
-| 7 | A3 | 336 | True | False |
-| 8 | A4 | 336 | True | True |
+| Experiment | Config | pred_len | Probabilistic | MC Dropout | aux_mse_weight | two_stage |
+|------------|--------|----------|---------------|------------|----------------|-----------|
+| 1 | A1 | 96 | False | False | 0.0 | False |
+| 2 | A2 | 96 | False | True | 0.0 | False |
+| 3 | A3 | 96 | True | False | 0.0 | False |
+| 4 | A4 | 96 | True | True | 0.0 | False |
+| 5 | A5 | 96 | True | False | 0.3 | False |
+| 6 | A6 | 96 | True | False | 0.0 | True |
+| 7 | A7 | 96 | True | True | 0.3 | False |
+| 8 | A1 | 336 | False | False | 0.0 | False |
+| 9 | A2 | 336 | False | True | 0.0 | False |
+| 10 | A3 | 336 | True | False | 0.0 | False |
+| 11 | A4 | 336 | True | True | 0.0 | False |
+| 12 | A5 | 336 | True | False | 0.3 | False |
+| 13 | A6 | 336 | True | False | 0.0 | True |
+| 14 | A7 | 336 | True | True | 0.3 | False |
 
 ### Default Hyperparameters (CPU-optimized)
 
@@ -180,6 +187,15 @@ python train.py --probabilistic True --mc_dropout False --pred_len 96
 
 # A4: Full uncertainty (Gaussian NLL + MC Dropout)
 python train.py --probabilistic True --mc_dropout True --pred_len 96
+
+# A5: Aleatoric + auxiliary MSE regularisation
+python train.py --probabilistic True --mc_dropout False --aux_mse_weight 0.3 --pred_len 96
+
+# A6: Two-stage training (MSE then NLL on log_var_head)
+python train.py --probabilistic True --mc_dropout False --two_stage True --pred_len 96
+
+# A7: Full uncertainty + auxiliary MSE regularisation
+python train.py --probabilistic True --mc_dropout True --aux_mse_weight 0.3 --pred_len 96
 ```
 
 ### Testing
@@ -192,11 +208,11 @@ python test.py --model_dir saved_models/<run_dir>
 python test.py --model_dir saved_models/<run_dir> --mc_samples 100
 ```
 
-### Run All 8 Experiments
+### Run All 14 Experiments
 
 ```bash
 cd Forecasting
-bash scripts/run_all.sh
+bash run_all.sh
 ```
 
 ### Output Structure
@@ -223,7 +239,7 @@ saved_models/<run_description>/
 - **MAE** — Mean Absolute Error
 - **RMSE** — Root Mean Squared Error
 
-### Probabilistic Metrics (A2–A4 only)
+### Probabilistic Metrics (A2–A7)
 - **NLL** — Gaussian Negative Log-Likelihood (with log(2pi) constant)
 - **CRPS** — Continuous Ranked Probability Score (analytic Gaussian)
 - **Calibration Error** — Average |nominal - observed| coverage across quantiles
@@ -238,7 +254,7 @@ saved_models/<run_description>/
 
 ## 8. Generated Visualizations
 
-For probabilistic models (A2–A4), `test.py` generates:
+For probabilistic models (A2–A7), `test.py` generates:
 
 1. **Prediction Intervals** — Shaded 50%/90%/95% prediction intervals with ground truth overlay
 2. **Calibration Plot** — Observed vs nominal coverage (well-calibrated models fall on the diagonal)
