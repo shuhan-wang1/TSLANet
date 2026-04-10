@@ -1,0 +1,316 @@
+% COMP0197 C2 — Progress Presentation & Design Defence (8 min + Q&A)
+% 4 speakers (one per required discussion point) + 3 support + 2 Q&A defenders
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+\newtcolorbox{speakerbox}[2][]{
+  colback=#2!5, colframe=#2!70!black, fonttitle=\bfseries\large,
+  title={#1}, breakable, left=4pt, right=4pt, top=4pt, bottom=4pt
+}
+\newtcolorbox{talkingpoints}[1][]{
+  colback=gray!5, colframe=gray!50, fonttitle=\bfseries,
+  title={Talking Points}, left=3pt, right=3pt, top=2pt, bottom=2pt, #1
+}
+\newtcolorbox{anticipatedqa}[1][]{
+  colback=red!3, colframe=red!40, fonttitle=\bfseries,
+  title={Anticipated Q\&A (for Defenders)}, left=3pt, right=3pt, top=2pt, bottom=2pt, #1
+}
+
+\title{\textbf{ProbTSLANet: C2 Presentation Script}\\[4pt]
+\large COMP0197 --- Progress Presentation \& Design Defence ($\sim$8 min + Q\&A)\\[3pt]
+\normalsize 7 Presenting Speakers + 2 Q\&A Defenders}
+\author{Group Members}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+% ============================================================================
+\section*{C2 Requirements (from spec)}
+% ============================================================================
+
+The spec defines \textbf{four} key discussion points that must be covered:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Design and Rationale}: Justification for the selected problem, dataset choice and the specific high-level architecture used.
+    \item \textbf{Implementation Plan}: A roadmap of how the system components (data loader, model, training loop and evaluation) are being integrated.
+    \item \textbf{Current Progress}: Demonstration of functional code segments, such as a working data pipeline or initial training benchmarks.
+    \item \textbf{Problem Solving}: How the group has addressed technical hurdles like data imbalance, slow convergence or hardware limitations.
+\end{enumerate}
+
+\noindent The group must \emph{demonstrate and defend through Q\&A a clear path to a working system}. No code is submitted at this stage.
+
+% ============================================================================
+\section*{Role Assignment ($\sim$8 min presentation + open Q\&A)}
+% ============================================================================
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}cllc@{}}
+\toprule
+\textbf{\#} & \textbf{Role} & \textbf{C2 Discussion Point} & \textbf{Time} \\
+\midrule
+1 & \textcolor{blue!70!black}{\textbf{Speaker 1}} & Design \& Rationale (problem + dataset) & $\sim$1.5 min \\
+2 & \textcolor{orange!80!black}{\textbf{Speaker 2}} & Design \& Rationale (architecture) & $\sim$1.5 min \\
+3 & \textcolor{teal!80!black}{\textbf{Speaker 3}} & Implementation Plan (components roadmap) & $\sim$1.5 min \\
+4 & \textcolor{violet!80!black}{\textbf{Speaker 4}} & Current Progress (working demo + benchmarks) & $\sim$1.5 min \\
+5 & \textcolor{red!70!black}{\textbf{Speaker 5}} & Problem Solving (technical hurdles) & $\sim$1 min \\
+6 & \textcolor{green!50!black}{\textbf{Speaker 6}} & Problem Solving (what's next) & $\sim$0.5 min \\
+7 & \textcolor{brown!80!black}{\textbf{Speaker 7}} & Wrap-up + transition to Q\&A & $\sim$0.5 min \\
+\midrule
+8 & \textcolor{gray!70!black}{\textbf{Defender A}} & Q\&A --- Theory \& design justification & as needed \\
+9 & \textcolor{gray!70!black}{\textbf{Defender B}} & Q\&A --- Code \& implementation details & as needed \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\newpage
+
+% ============================================================================
+% SPEAKER 1 — Design & Rationale: Problem + Dataset
+% ============================================================================
+\begin{speakerbox}[Speaker 1 --- Design \& Rationale: Problem + Dataset \textnormal{($\sim$1.5 min)}]{blue}
+
+\textbf{C2 requirement addressed:} \textit{Justification for the selected problem and dataset choice.}
+
+\begin{talkingpoints}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Problem}: Standard forecasting models output a single number --- but real decisions need \emph{confidence}. We build a system that outputs a \textbf{probability distribution} $\mathcal{N}(\mu, \sigma^2)$ for every future timestep.
+    \item \textbf{Two types of uncertainty} (one sentence each):
+    \begin{itemize}
+        \item \emph{Aleatoric}: irreducible data noise (measurement error, chaos).
+        \item \emph{Epistemic}: model uncertainty, reducible with more data.
+    \end{itemize}
+    Our system decomposes and reports both.
+    \item \textbf{Dataset}: Weather benchmark --- 52K hourly observations, 21 meteorological variables, from a German weather station. Standard in the forecasting literature (Autoformer, PatchTST).
+    \item \textbf{Why weather?} Strong periodic patterns (ideal for spectral modelling) + genuine noise (ideal for testing uncertainty quantification). Chronological 70/10/20 split, no leakage.
+\end{itemize}
+\end{talkingpoints}
+
+\begin{anticipatedqa}
+\textbf{Q: Why only one dataset?} --- We prioritise depth of analysis (7-config ablation $\times$ 2 horizons = 14 experiments) over breadth. Weather is a standard benchmark allowing comparison with published results. \\
+\textbf{Q: Why not finance/medical data?} --- Weather has well-understood physics making uncertainty results interpretable. The framework generalises to other domains.
+\end{anticipatedqa}
+
+\end{speakerbox}
+
+\vspace{6pt}
+
+% ============================================================================
+% SPEAKER 2 — Design & Rationale: Architecture
+% ============================================================================
+\begin{speakerbox}[Speaker 2 --- Design \& Rationale: Architecture \textnormal{($\sim$1.5 min)}]{orange}
+
+\textbf{C2 requirement addressed:} \textit{Justification for the specific high-level architecture.}
+
+\begin{talkingpoints}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Backbone}: TSLANet (ICML 2024) --- lightweight, patch-based, combines spectral filtering with convolutional gating. We extend it into \textbf{ProbTSLANet}.
+    \item \textbf{High-level flow} (show diagram):
+    \begin{center}
+    \small Input $\to$ Instance Norm $\to$ Patch \& Embed $\to$ 2$\times$ TSLANet Blocks $\to$ Flatten $\to$ $\begin{cases} \mu\text{-head} \\ \log\sigma^2\text{-head} \end{cases}$ $\to$ $\mathcal{N}(\mu,\sigma^2)$
+    \end{center}
+    \item \textbf{Key components} (one line each):
+    \begin{itemize}
+        \item \emph{Adaptive Spectral Block}: FFT $\to$ learnable frequency weights + energy-based mask $\to$ iFFT. Separates trend from noise in frequency domain.
+        \item \emph{Interacting Conv Block}: Two parallel convolutions with multiplicative gating --- captures local temporal patterns.
+        \item \emph{Dual output heads}: $\mu$-head for the mean, $\log\sigma^2$-head for learned variance (heteroscedastic Gaussian).
+    \end{itemize}
+    \item \textbf{Why TSLANet?} Spectral block matches weather periodicity; channel-independent design scales to 21 variables; lightweight ($\sim$50K params, trains in minutes).
+\end{itemize}
+\end{talkingpoints}
+
+\begin{anticipatedqa}
+\textbf{Q: Why not Transformer / LSTM?} --- TSLANet's spectral block directly learns frequency representations ideal for periodic weather data, avoids quadratic attention cost, and the original paper shows competitive results on Weather. \\
+\textbf{Q: Why depth 2?} --- Diminishing returns beyond 2 for this dataset size; deeper models overfit on 36K samples.
+\end{anticipatedqa}
+
+\end{speakerbox}
+
+\newpage
+
+% ============================================================================
+% SPEAKER 3 — Implementation Plan
+% ============================================================================
+\begin{speakerbox}[Speaker 3 --- Implementation Plan \textnormal{($\sim$1.5 min)}]{teal}
+
+\textbf{C2 requirement addressed:} \textit{A roadmap of how the system components (data loader, model, training loop and evaluation) are being integrated.}
+
+\begin{talkingpoints}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Codebase structure}: Two self-contained scripts, no external model libraries:
+    \begin{itemize}
+        \item \texttt{train.py} --- data loading, model definition, pretraining, fine-tuning, saves weights + config.
+        \item \texttt{test.py} --- loads model, runs inference, computes metrics, generates plots.
+    \end{itemize}
+    \item \textbf{Component integration roadmap}:
+    \begin{enumerate}[leftmargin=*]
+        \item \textbf{Data loader}: \texttt{Dataset\_Custom} class --- reads CSV, z-score normalisation (fitted on train only), sliding-window sampling, time feature extraction. $\checkmark$ Done.
+        \item \textbf{Model}: \texttt{ProbabilisticTSLANet} --- patching, 2$\times$ TSLANet blocks (ASB+ICB), dual output heads. $\checkmark$ Done.
+        \item \textbf{Training loop}: Phase 1 (self-supervised masked patch pretraining, 5 epochs) $\to$ Phase 2 (supervised fine-tuning with NLL or MSE loss, 15 epochs). AdamW, LR scheduling, gradient clipping. $\checkmark$ Done.
+        \item \textbf{Evaluation}: Point metrics (MSE, MAE) + probabilistic metrics (NLL, CRPS, calibration, sharpness) + uncertainty decomposition + visualisation. $\checkmark$ Done.
+    \end{enumerate}
+    \item \textbf{Ablation automation}: \texttt{run\_all.sh} runs all 14 experiments (7 configs $\times$ 2 horizons) end-to-end. Each experiment saves its own \texttt{config.json}, weights, metrics, and plots.
+    \item \textbf{Framework}: Pure PyTorch (\texttt{comp0197-pt} environment). Only extra package: \texttt{matplotlib}.
+\end{itemize}
+\end{talkingpoints}
+
+\begin{anticipatedqa}
+\textbf{Q: Why single-file scripts?} --- Coursework requires standalone \texttt{train.py}/\texttt{test.py}. Embedding everything avoids import-path issues and ensures reproducibility. \\
+\textbf{Q: How is reproducibility ensured?} --- Fixed seed (42), deterministic cuDNN, config saved per experiment, \texttt{instruction.pdf} with exact steps.
+\end{anticipatedqa}
+
+\end{speakerbox}
+
+\vspace{6pt}
+
+% ============================================================================
+% SPEAKER 4 — Current Progress
+% ============================================================================
+\begin{speakerbox}[Speaker 4 --- Current Progress \textnormal{($\sim$1.5 min)}]{violet}
+
+\textbf{C2 requirement addressed:} \textit{Demonstration of functional code segments, such as a working data pipeline or initial training benchmarks.}
+
+\begin{talkingpoints}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{All 14 experiments are complete}. Show summary of initial benchmarks:
+
+    \begin{center}
+    \footnotesize
+    \setlength{\tabcolsep}{3pt}
+    \begin{tabular}{@{}ll|cc|cc@{}}
+    \toprule
+    $H$ & Config & MSE$\downarrow$ & MAE$\downarrow$ & CRPS$\downarrow$ & Cal.\ Err.$\downarrow$ \\
+    \midrule
+    \multirow{3}{*}{96}
+    & A1 (deterministic) & \textbf{.174} & \textbf{.215} & --- & --- \\
+    & A3 (aleatoric) & .197 & .223 & \textbf{.185} & \textbf{.102} \\
+    & A7 (full+auxMSE) & .183 & .217 & .194 & .139 \\
+    \bottomrule
+    \end{tabular}
+    \end{center}
+
+    \item \textbf{Key observation so far}: The Gaussian NLL head (A3) is the critical component --- produces well-calibrated intervals (CE = 0.102). MC Dropout alone (A2) fails completely (CE = 0.436, collapsed intervals).
+    \item \textbf{Working demos to show if asked}: data pipeline loading weather CSV, training loss curves, prediction interval plots, calibration plots, uncertainty heatmaps.
+    \item \textbf{Saved models}: 14 directories with weights, configs, metrics JSON, and PDF plots --- all reproducible.
+\end{itemize}
+\end{talkingpoints}
+
+\begin{anticipatedqa}
+\textbf{Q: Why is MSE worse for probabilistic models?} --- NLL loss optimises distributional accuracy, not point accuracy. A5/A7 add auxiliary MSE to recover most of the gap (0.183 vs.\ 0.174). \\
+\textbf{Q: Show us the calibration plot?} --- (Have the saved PDF plots ready to display from \texttt{saved\_models/A3\_pl96/results/plots/}).
+\end{anticipatedqa}
+
+\end{speakerbox}
+
+\newpage
+
+% ============================================================================
+% SPEAKER 5 — Problem Solving: Technical Hurdles
+% ============================================================================
+\begin{speakerbox}[Speaker 5 --- Problem Solving: Technical Hurdles \textnormal{($\sim$1 min)}]{red}
+
+\textbf{C2 requirement addressed:} \textit{How the group has addressed technical hurdles.}
+
+\begin{talkingpoints}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Hurdle 1 --- NLL loss instability}: Early training with NLL caused exploding gradients and the model ``cheating'' by inflating $\sigma^2$. \\
+    \textbf{Solution}: (a) Conservative $\log\sigma^2$-head initialisation (weights $= 0$, bias $= -2$), (b) output clamping to $[-10, 10]$, (c) gradient clipping (max norm 4.0).
+
+    \item \textbf{Hurdle 2 --- NLL hurting point accuracy}: Pure NLL sacrificed MSE to improve likelihood. \\
+    \textbf{Solution}: Added auxiliary MSE loss ($\lambda = 0.3$) in A5/A7, recovering 7\% MSE while maintaining calibration. Also tried two-stage training (A6) but found it over-disperses.
+
+    \item \textbf{Hurdle 3 --- MC Dropout alone is useless} (A2): Dropout variance from a deterministic model is near-zero, producing collapsed intervals. \\
+    \textbf{Solution}: Recognised that aleatoric uncertainty \emph{must} be modelled explicitly via the Gaussian head; MC Dropout is only useful \emph{on top of} it.
+
+    \item \textbf{Hurdle 4 --- Variance denormalisation}: Instance normalisation (RevIN) required careful variance scaling ($\log\sigma^2_{\text{out}} = \log\tilde{\sigma}^2 + 2\log s$) to avoid incorrect uncertainty in original scale.
+\end{itemize}
+\end{talkingpoints}
+
+\end{speakerbox}
+
+\vspace{6pt}
+
+% ============================================================================
+% SPEAKER 6 — Problem Solving: What's Next
+% ============================================================================
+\begin{speakerbox}[Speaker 6 --- What Remains \textnormal{($\sim$0.5 min)}]{green!50!black}
+
+\begin{talkingpoints}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Remaining work for C3}:
+    \begin{itemize}
+        \item Finalise the comparison analysis across all 14 experiments.
+        \item Polish visualisation (prediction intervals, calibration, uncertainty heatmaps).
+        \item Write the LNCS report (Introduction, Methods, Experiments, Results, Discussion).
+        \item Each member writes individual Part B (contribution, critique, GenAI audit).
+    \end{itemize}
+    \item \textbf{No major technical risks remain} --- all code runs, all experiments complete, all metrics computed.
+\end{itemize}
+\end{talkingpoints}
+
+\end{speakerbox}
+
+\vspace{6pt}
+
+% ============================================================================
+% SPEAKER 7 — Wrap-up
+% ============================================================================
+\begin{speakerbox}[Speaker 7 --- Wrap-up \textnormal{($\sim$0.5 min)}]{brown}
+
+\begin{talkingpoints}
+\begin{itemize}[leftmargin=*]
+    \item One-line summary: \textbf{ProbTSLANet} extends TSLANet with Gaussian output heads and MC Dropout to produce calibrated probabilistic weather forecasts with decomposed aleatoric/epistemic uncertainty.
+    \item The Gaussian NLL head is the key component; auxiliary MSE loss is the key practical fix.
+    \item System is fully implemented and all 14 ablation experiments are complete.
+    \item ``We're happy to take questions --- over to the panel.''
+\end{itemize}
+\end{talkingpoints}
+
+\end{speakerbox}
+
+\newpage
+
+% ============================================================================
+% Q&A DEFENDERS
+% ============================================================================
+\begin{speakerbox}[Defender A --- Q\&A: Theory \& Design Rationale]{gray}
+
+\textbf{Likely questions and prepared answers:}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{``Why Gaussian and not another distribution?''} --- Gaussian is the simplest continuous distribution with learnable mean and variance. Analytically tractable for NLL, CRPS. Richer options (mixture density, normalising flows) are future work.
+    \item \textbf{``Is MC Dropout a valid Bayesian method?''} --- It approximates variational inference. Tends to \emph{underestimate} epistemic uncertainty vs.\ deep ensembles, but is computationally cheap (single model).
+    \item \textbf{``Why is epistemic uncertainty so low?''} --- (1) Weather noise genuinely dominates, (2) MC Dropout with a small model underestimates it. Ensembles would give a stronger signal.
+    \item \textbf{``What is the adaptive spectral mask actually doing?''} --- It computes per-frequency energy, thresholds against the median, and applies separate learnable weights to high-energy vs.\ low-energy frequencies. This lets the model treat periodic signals and noise differently.
+    \item \textbf{``Is NLL a proper scoring rule?''} --- Yes, for the Gaussian family. CRPS is also strictly proper and more robust to outliers.
+\end{itemize}
+\end{speakerbox}
+
+\vspace{6pt}
+
+\begin{speakerbox}[Defender B --- Q\&A: Implementation \& Code Details]{gray}
+
+\textbf{Likely questions and prepared answers:}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{``How do you prevent data leakage?''} --- Chronological split (70/10/20), scaler fitted on train only, no shuffling at test time.
+    \item \textbf{``How is MC Dropout implemented?''} --- \texttt{model.eval()} then \texttt{m.train()} only for \texttt{nn.Dropout} layers. 50 stochastic passes, epistemic var = variance of means.
+    \item \textbf{``Key hyperparameters?''} --- $L\!=\!96$, patch$\!=\!16$, stride$\!=\!8$, $d\!=\!32$, depth$\!=\!2$, dropout$\!=\!0.3$, lr$\!=\!10^{-4}$, batch$\!=\!32$, mask ratio$\!=\!0.4$, MC samples$\!=\!50$.
+    \item \textbf{``How long does training take?''} --- $\sim$3--5 min per experiment on one GPU. All 14 in $\sim$1 hour via \texttt{run\_all.sh}.
+    \item \textbf{``What extra packages?''} --- Only \texttt{matplotlib}. Core: torch, numpy, pandas are in the base environment.
+    \item \textbf{``Why $\lambda = 0.3$ for aux MSE?''} --- Tested \{0.1, 0.3, 0.5\}; 0.3 is the best MSE-vs-calibration trade-off.
+    \item \textbf{``Show us a code segment?''} --- (Have \texttt{train.py} open at line 593 for the \texttt{ProbabilisticTSLANet} class, and line 688 for \texttt{GaussianNLLLoss}.)
+\end{itemize}
+\end{speakerbox}
+
+\end{document}

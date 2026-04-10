@@ -1,0 +1,774 @@
+\documentclass[10pt]{beamer}
+\usetheme[progressbar=frametitle]{metropolis}
+\usepackage{appendixnumberbeamer}
+\usepackage[style=verbose, backend=bibtex]{biblatex}
+\addbibresource{slide.bib}
+
+\usepackage{booktabs}
+\usepackage[scale=2]{ccicons}
+
+\usepackage{pgfplots}
+\usepgfplotslibrary{dateplot}
+
+\usepackage{xspace}
+\newcommand{\themename}{\textbf{\textsc{metropolis}}\xspace}
+
+
+
+\title{COMP0197: Applied Deep Learning - Group Project}
+\subtitle{ProbTSLANet: Probabilistic Time Series Forecasting with Uncertainty Decomposition}
+% \date{\today}
+\author{Group 29} 
+\institute{Chi Wang Cheung, Xuanhao Gu, Scarlett He, Baorui Li, Tongjia Li, Zhiyuan Luo, Shuhan Wang, \\ Flora Xu, Fengyuan Zheng}
+
+\date{March 26, 2026}
+\begin{document}
+
+\maketitle
+
+\begin{frame}{Table of contents}
+  \setbeamertemplate{section in toc}[sections numbered]
+  \tableofcontents%[hideallsubsections]
+\end{frame}
+
+\section[Design and Rationale]{Design and Rationale}
+
+\begin{frame}[fragile]{Design and Rationale - Problem Definition}
+\textbf{Project Goal}: 
+Develop a sequence model predicting future values while quantifying uncertainties associated with those predictions.
+
+\textbf{Motivation}: 
+Standard forecasting models often only do point estimation, but lack a measure of \emph{confidence}. We aimed to 
+build a system that outputs a \textbf{probability distribution} $\mathcal{N}(\mu, \sigma^2)$ for every future timestep.
+
+\end{frame}
+
+\begin{frame}[fragile]{Design and Rationale - Two types of uncertainty}
+
+\begin{columns}[T,onlytextwidth]
+    \footnote{{ Eyke Hüllermeier and Willem Waegeman. “Aleatoric and
+    epistemic uncertainty in machine learning: An introduction to
+    concepts and methods”. }}
+    \column{0.5\textwidth}
+      \textbf{Aleatoric Uncertainty}
+      \begin{itemize}
+        \item irreducible data noise 
+        \item measurement error, chaos
+        \newline
+      \end{itemize}
+      \centering
+      \includegraphics[width=0.8\textwidth]{images/Aleatoric.png}
+    
+    \column{0.5\textwidth}
+      \textbf{Epistemic Uncertainty}
+      \begin{itemize}
+        \item model uncertainty
+        \item reducible with more data
+        \newline
+      \end{itemize}
+      \centering
+      \includegraphics[width=0.8\textwidth]{images/Epistemic.png}
+
+  \end{columns}
+   
+\end{frame}
+
+\begin{frame}[fragile]{Design and Rationale - Architecture Backbone} 
+
+    Time Series Lightweight Adaptive Network \textbf{TSLANet} \textit{(ICML2024)} replaces Self-Attention with two lightweight, specialized blocks:
+
+    \begin{columns}[T,onlytextwidth]
+        \column{0.48\textwidth}
+        \metroset{block=fill}
+        \begin{block}{Adaptive Spectral Block (ASB)}
+            \small
+            \textbf{Frequency Domain Learning}
+            \begin{itemize}
+                \item Applies \textbf{FFT} to the input sequence.
+                \item \textbf{Adaptive Masking}: Separates low-frequency trends from high-frequency noise based on energy.
+                \item Applies \textbf{Inverse FFT} to retain it back to spatial domain
+            \end{itemize}
+        \end{block}
+
+        \column{0.48\textwidth}
+        \metroset{block=fill}
+        \begin{block}{Interactive Conv Block (ICB)}
+            \small
+            \textbf{Time Domain Learning}
+            \begin{itemize}
+                \item Uses two parallel Convolutions (kernel sizes 1 and 3).
+                \item \textbf{Gated Interaction}: Employs multiplicative gating to fuse features.
+                \item Extracts local temporal dependencies and cross-variable correlations.
+            \end{itemize}
+        \end{block}
+    \end{columns}
+    
+    \vspace{0.3cm}
+    \centering
+\end{frame}
+
+\begin{frame}[fragile]{Design and Rationale - Architecture Backbone} 
+    \begin{figure}
+        \centering
+        \includegraphics[width=0.85\textwidth]{images/TSLANet.png}
+        \caption{\textit{Overall Architecture of TSLANet 
+        \protect\footnote{Emadeldeen Eldele et al. “TSLAnet: Rethinking transformers for time series representation learning”. }}}
+    \end{figure}
+\end{frame}
+
+\begin{frame}[fragile]{Design and Rationale - Probabilistic Extension}
+
+\textbf{After ICB Backbone}
+
+\[
+\mathbf{h} = \text{Backbone}(x)
+\]
+
+We introduce two Gaussian output heads:
+\[
+\mu = W_{\mu}\mathbf{h} + b_{\mu}
+\]
+\[
+\log \sigma^2 = W_{\sigma}\mathbf{h} + b_{\sigma}
+\]
+
+Heteroscedastic Gaussian Modeling with NLL Objective:
+
+\[
+\mathcal{L} = \frac{1}{2}\left(\log \sigma^2 + \frac{(y - \mu)^2}{\sigma^2}\right)
+\]
+
+\begin{itemize}
+    \item $\mu$: predicted mean (forecast)
+    \item $\sigma^2$: data-dependent uncertainty (aleatoric)
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Design and Rationale - Epistemic Uncertainty via MC Dropout}
+
+\textbf{Monte Carlo (MC) Dropout for Epistemic Uncertainty}
+
+\vspace{0.5em}
+
+At test time, we enable dropout and perform $K$ stochastic forward passes:
+\[
+\mu_k = f_{\theta, m_k}(x), \quad k = 1, \dots, K
+\]
+
+\vspace{0.5em}
+
+\textbf{Epistemic uncertainty} (model uncertainty) is estimated as:
+\[
+\mathrm{Var}_{\text{ep}}(y \mid x) = \mathrm{Var}(\mu_1, \dots, \mu_K)
+\]
+
+\vspace{0.5em}
+
+\textbf{Aleatoric uncertainty} (data noise) from Gaussian head:
+\[
+\mathrm{Var}_{\text{al}}(y \mid x) = \frac{1}{K} \sum_{k=1}^{K} \sigma_k^2
+\]
+\textbf{Total predictive uncertainty:}
+\[
+\mathrm{Var}_{\text{total}} = \mathrm{Var}_{\text{ep}} + \mathrm{Var}_{\text{al}}
+\]
+
+\end{frame}
+
+\begin{frame}[fragile]{Design and Rationale - Dataset Choice} 
+
+\begin{itemize}
+
+\item \textbf{Dataset:} Weather benchmark — $\sim$52K hourly observations, 21 meteorological variables from a German weather station. Widely used in time-series forecasting literature (e.g., Autoformer, PatchTST).
+
+\vspace{0.5em}
+
+\item \textbf{Motivation:} Strong temporal dependency and clear periodic patterns (well-suited for sequence and spectral modelling), together with inherent stochastic noise (ideal for evaluating uncertainty quantification).
+
+\vspace{0.5em}
+
+\item \textbf{Data split:} Chronological 70/10/20 train/validation/test split to prevent information leakage.
+
+\end{itemize}
+
+\end{frame}
+
+
+% ------------------------------------------------
+
+\section{Implementation Plan}
+
+\begin{frame}{Implementation Plan}
+\small
+
+\begin{columns}[T,onlytextwidth]
+
+    % Left column
+    \column{0.3\textwidth}
+    \metroset{block=fill}   
+    \begin{alertblock}{Framework}
+    PyTorch + \texttt{pandas} + \texttt{matplotlib}
+    \end{alertblock}
+
+    \begin{exampleblock}{File Structure}
+    \ttfamily
+    \footnotesize
+    src/\\
+    \hspace*{1em}data/weather/\\
+    \hspace*{1em}saved\_models/\\
+    \hspace*{1em}run\_all.sh\\
+    \hspace*{1em}test.py\\
+    \hspace*{1em}train.py
+    \end{exampleblock}
+    
+    % Right column
+    \column{0.65\textwidth}
+    \textbf{Implementation roadmap}
+    \vspace{0.2cm}
+    
+    \begin{enumerate}
+        \item \textbf{Data loader:} \texttt{Dataset\_Custom} for CSV input, z-score normalisation, sliding-window sampling, and time features
+        
+        \item \textbf{Model:} ProbabilisticTSLANet
+        
+        \item \textbf{Training loop:} self-supervised pretraining $\rightarrow$ supervised fine-tuning
+        
+        \item \textbf{Evaluation:} forecasting metrics and uncertainty plots
+    \end{enumerate}
+
+\end{columns}
+
+\end{frame}
+
+\begin{frame}{Implementation Plan - Evaluation}
+\begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \textbf{1. Point Metrics}
+            \begin{itemize}
+                \item \textbf{MSE}
+                \item \textbf{MAE}
+                \item \textbf{RMSE}
+            \end{itemize}
+            
+            \textbf{2. Probabilistic Metrics}
+            \begin{itemize}
+                \item \textbf{CRPS}: Measures the integrated squared error between the predicted and empirical CDFs
+                \item \textbf{NLL}: Measures the log-density of the observed data under the predicted distribution
+            \end{itemize}
+        \end{column}
+
+        \begin{column}{0.5\textwidth}
+            \textbf{3. Sharpness}
+            \begin{itemize}
+                \item \textbf{Sharpness}: Average width of the 90\%/50\% prediction intervals
+            \end{itemize}
+
+            \textbf{4. Calibration}
+            \begin{itemize}
+                \item \textbf{Calibration Error}: Mean absolute difference between predicted quantiles and actual coverage
+            \end{itemize}
+            
+
+            \textbf{5. Uncertainty}
+            \begin{itemize}
+                \item \textbf{Mean Epistemic Var}
+                \item \textbf{Mean Aleatoric Var}
+            \end{itemize}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% ------------------------------------------------
+
+\section{Current Progress}
+
+
+\begin{frame}[shrink=8]{Current Progress — Experiment Design}
+\begin{columns}[t]
+
+  \begin{column}{0.49\textwidth}
+
+    \begin{block}{\footnotesize\textbf{A1 — Deterministic Baseline}}
+      \scriptsize
+      ~\\
+      \textbf{Principle:} Original TSLANet with no probabilistic modification.
+      Outputs a \textbf{single point prediction} $\hat{y}$ per time step.
+      No uncertainty is modelled. Serves as the reference for point accuracy.
+      \par\vspace{4pt}
+      \textbf{Method:} Trained with MSE loss. Single forward pass at inference;
+      no distribution, no intervals.
+    \end{block}
+
+    \vspace{0.4em}
+
+    \begin{block}{\footnotesize\textbf{A3 — Aleatoric Uncertainty (NLL Head)}}
+      \scriptsize
+      ~\\
+      \textbf{Principle:} Models \textbf{aleatoric} uncertainty --- the
+      inherent noise in the data itself, which cannot be reduced by more
+      data or a better model. No MC Dropout; epistemic uncertainty is
+      not captured.
+      \par\vspace{4pt}
+      \textbf{Method:} Output extended from $\hat{y}$ to $\mathcal{N}(\mu,\sigma^2)$.
+      Training minimises NLL: $\mathcal{L} = \log\sigma + \frac{(y-\mu)^2}{2\sigma^2}$,
+      directly supervising the model to learn how uncertain to be.
+      Single forward pass at inference.
+    \end{block}
+
+  \end{column}
+
+  \begin{column}{0.49\textwidth}
+
+    \begin{block}{\footnotesize\textbf{A2 — Epistemic Uncertainty (MC Dropout)}}
+      \scriptsize
+      ~\\
+      \textbf{Principle:} Models \textbf{epistemic} uncertainty --- the
+      model's confidence in its own weights. More unstable outputs across
+      passes indicate lower model confidence.
+      \par\vspace{4pt}
+      \textbf{Method:} Architecture and loss unchanged from A1.
+      Dropout stays active at inference; $K$ forward passes each randomly
+      silence a different subset of neurons. Mean of $K$ outputs gives
+      the forecast; standard deviation estimates epistemic uncertainty.
+    \end{block}
+
+    \vspace{0.4em}
+
+    \begin{block}{\footnotesize\textbf{A4 — Combined: NLL Head + MC Dropout}}
+      \scriptsize
+      ~\\
+      \textbf{Principle:} Simultaneously models both \textbf{aleatoric}
+      and \textbf{epistemic} uncertainty, aiming for a complete
+      uncertainty budget.
+      \par\vspace{4pt}
+      \textbf{Method:} Combines A2 and A3. $K$ stochastic forward passes
+      each produce $(\mu_k, \sigma^2_k)$; the two uncertainty sources
+      are decomposed and summed to form the final predictive distribution.
+    \end{block}
+
+  \end{column}
+
+\end{columns}
+\end{frame}
+
+
+
+
+\begin{frame}[t]{Current Progress — Prediction Intervals}
+
+\vspace{0.3em}
+\centering
+\textbf{\footnotesize A1 — Deterministic Baseline: point prediction only, no intervals produced.}
+
+\vspace{0.5em}
+
+\begin{columns}[c]
+
+  \begin{column}{0.32\textwidth}
+    \centering
+    \textbf{\footnotesize A2 — MC Dropout}\\[4pt]
+    \includegraphics[width=\textwidth]{images/a2}\\[4pt]
+    \scriptsize \textcolor{red!80!black}{Intervals static and collapsed.\\
+    Width unchanged across horizon.\\
+    Ground truth escapes entirely.}
+  \end{column}
+
+  \begin{column}{0.32\textwidth}
+    \centering
+    \textbf{\footnotesize A3 — NLL Head}\\[4pt]
+    \includegraphics[width=\textwidth]{images/a3}\\[4pt]
+    \scriptsize \textcolor{green!60!black}{Intervals fan out over horizon.\\
+    Uncertainty grows with distance.\\
+    Ground truth stays within 95\% PI.}
+  \end{column}
+
+  \begin{column}{0.32\textwidth}
+    \centering
+    \textbf{\footnotesize A4 — NLL + MC Dropout}\\[4pt]
+    \includegraphics[width=\textwidth]{images/a4}\\[4pt]
+    \scriptsize Same fan-out trend as A3.\\
+    Intervals slightly wider overall;\\
+    edges marginally more irregular.
+  \end{column}
+
+\end{columns}
+
+\vspace{0.5em}
+\centering
+\textbf{\footnotesize $\Rightarrow$ MC Dropout + NLL did not achieve the expected effect.}\\[4pt]
+\scriptsize
+\textit{NLL and MSE optimise different objectives --- NLL trains the model to produce
+a well-calibrated distribution by learning $\mu$ and $\sigma^2$, but does not directly
+optimise point accuracy. Improving NLL does not necessarily improve MSE/MAE.}
+
+
+\end{frame}
+
+
+% ------------------------------------------------
+
+\section[Problem Solving]{Problem Solving (technical hurdles)}
+
+% ---- Metric comparison table ----
+\begin{frame}[shrink=5]{Problem Solving — Key Metric Comparison}
+
+\small
+\textbf{Core issue:} NLL encourages the model to \textcolor{red}{\textbf{inflate variance}} to lower loss
+instead of improving prediction accuracy ---
+sacrificing MSE while producing \textcolor{red}{\textbf{meaningless}} uncertainty intervals.
+
+\vspace{0.4em}
+
+\begin{table}
+\centering
+\setlength{\tabcolsep}{6pt}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{MSE} & \textbf{NLL} & \textbf{Cal.\ Error} & \textbf{Log Var} \\
+\midrule
+A1 (Deterministic)       & 0.1736 & ---    & ---    & ---    \\
+A3 (NLL only)            & \textcolor{red}{\textbf{0.1968}} & 0.2861 & 0.1023 & moderate \\
+A5 (NLL + aux.\ MSE)     & 0.1829 & 0.1674 & 0.1306 & moderate \\
+A6 (Two-stage)           & 0.1730 & 0.1730 & 0.2562 & \textcolor{red}{\textbf{very large}} \\
+A7 (A5 + MC Dropout)     & 0.1829 & 0.1357 & 0.1386 & moderate \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.3em}
+\centering
+\scriptsize
+$\Rightarrow$ \textbf{A5 chosen as base}; extended to \textbf{A7} (A5 + MC Dropout)
+for full aleatoric + epistemic uncertainty decomposition.
+
+\end{frame}
+
+% ---- A5 / A6 ----
+\begin{frame}[shrink=8]{Problem Solving (technical hurdles)}
+\begin{columns}[t]
+
+  \begin{column}{0.49\textwidth}
+
+    \begin{block}{\footnotesize\textbf{A5 — NLL + Auxiliary MSE Loss}}
+      \scriptsize
+      ~\\
+      \textbf{Hurdle:} Pure NLL training encourages the model to
+      \textbf{inflate} $\sigma^2$ to minimise loss, which
+      \emph{dilutes the gradient} for $\mu$ and causes
+      MSE to \textbf{rise} compared with the deterministic baseline~(A1).
+      \par\vspace{4pt}
+      \textbf{Solution:} Add a weighted MSE term alongside NLL:
+      \[
+        \mathcal{L} = \mathcal{L}_{\text{NLL}} + \lambda\,\mathcal{L}_{\text{MSE}}
+      \]
+      This explicitly penalises poor mean predictions,
+      preventing variance from masking inaccuracy while
+      preserving well-calibrated uncertainty intervals.
+    \end{block}
+
+  \end{column}
+
+  \begin{column}{0.49\textwidth}
+
+    \begin{block}{\footnotesize\textbf{A6 — Two-Stage Decoupled Training}}
+      \scriptsize
+      ~\\
+      \textbf{Hurdle:} Even with auxiliary MSE, jointly optimising
+      $\mu$ and $\sigma^2$ allows the variance head to
+      \textbf{compensate} for a weak mean by growing $\log\sigma^2$,
+      producing intervals too wide to be informative.
+      \par\vspace{4pt}
+      \textbf{Solution:} Decouple training into two stages:
+      \begin{enumerate}
+        \item Train backbone + mean head with \textbf{MSE only};
+              weights \textbf{frozen} after convergence.
+        \item Train variance head alone with \textbf{NLL only},
+              forcing it to learn \emph{residual uncertainty}
+              rather than compensating for mean error.
+      \end{enumerate}
+      \textbf{Outcome:} Mean accuracy preserved; however variance
+      head still tends toward overly large $\log\sigma^2$
+      $\Rightarrow$ A5 selected as stronger base for A7.
+    \end{block}
+
+  \end{column}
+
+\end{columns}
+\end{frame}
+
+
+% ------------------------------------------------
+
+
+
+
+\section{Conclusion}
+
+\begin{frame}[fragile]{Summary} 
+
+  \begin{itemize}
+      \item \textbf{ProbTSLANet} extends TSLANet with \textbf{Gaussian output heads} and \textbf{MC Dropout}
+  \end{itemize}
+\begin{itemize}
+    \item Add \textbf{auxiliary MSE loss} on top of NLL loss, improving MSE while maintaining calibration
+
+\end{itemize}
+\begin{itemize}
+
+    \item Our model produces calibrated probabilistic weather forecasts with decomposed aleatoric/epistemic uncertainty
+\end{itemize}
+
+
+
+\end{frame}
+
+
+% ------------------------------------------------
+
+
+
+
+\section{Thank you for listening!}
+
+
+
+
+
+
+
+
+% ------------------------------------------------
+
+
+\section{Elements}
+
+\begin{frame}[fragile]{Typography}
+      \begin{verbatim}The theme provides sensible defaults to
+\emph{emphasize} text, \alert{accent} parts
+or show \textbf{bold} results.\end{verbatim}
+
+  \begin{center}becomes\end{center}
+
+  The theme provides sensible defaults to \emph{emphasize} text,
+  \alert{accent} parts or show \textbf{bold} results.
+\end{frame}
+
+\begin{frame}{Font feature test}
+  \begin{itemize}
+    \item Regular
+    \item \textit{Italic}
+    \item \textsc{SmallCaps}
+    \item \textbf{Bold}
+    \item \textbf{\textit{Bold Italic}}
+    \item \textbf{\textsc{Bold SmallCaps}}
+    \item \texttt{Monospace}
+    \item \texttt{\textit{Monospace Italic}}
+    \item \texttt{\textbf{Monospace Bold}}
+    \item \texttt{\textbf{\textit{Monospace Bold Italic}}}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Lists}
+  \begin{columns}[T,onlytextwidth]
+    \column{0.33\textwidth}
+      Items
+      \begin{itemize}
+        \item Milk \item Eggs \item Potatos
+      \end{itemize}
+
+    \column{0.33\textwidth}
+      Enumerations
+      \begin{enumerate}
+        \item First, \item Second and \item Last.
+      \end{enumerate}
+
+    \column{0.33\textwidth}
+      Descriptions
+      \begin{description}
+        \item[PowerPoint] Meeh. \item[Beamer] Yeeeha.
+      \end{description}
+  \end{columns}
+\end{frame}
+\begin{frame}{Animation}
+  \begin{itemize}[<+- | alert@+>]
+    \item \alert<4>{This is\only<4>{ really} important}
+    \item Now this
+    \item And now this
+  \end{itemize}
+\end{frame}
+\begin{frame}{Figures}
+  \begin{figure}
+    \newcounter{density}
+    \setcounter{density}{20}
+    \begin{tikzpicture}
+      \def\couleur{alerted text.fg}
+      \path[coordinate] (0,0)  coordinate(A)
+                  ++( 90:5cm) coordinate(B)
+                  ++(0:5cm) coordinate(C)
+                  ++(-90:5cm) coordinate(D);
+      \draw[fill=\couleur!\thedensity] (A) -- (B) -- (C) --(D) -- cycle;
+      \foreach \x in {1,...,40}{%
+          \pgfmathsetcounter{density}{\thedensity+20}
+          \setcounter{density}{\thedensity}
+          \path[coordinate] coordinate(X) at (A){};
+          \path[coordinate] (A) -- (B) coordinate[pos=.10](A)
+                              -- (C) coordinate[pos=.10](B)
+                              -- (D) coordinate[pos=.10](C)
+                              -- (X) coordinate[pos=.10](D);
+          \draw[fill=\couleur!\thedensity] (A)--(B)--(C)-- (D) -- cycle;
+      }
+    \end{tikzpicture}
+    \caption{Rotated square from
+    \href{http://www.texample.net/tikz/examples/rotated-polygons/}{texample.net}.}
+  \end{figure}
+\end{frame}
+\begin{frame}{Tables}
+  \begin{table}
+    \caption{Largest cities in the world (source: Wikipedia)}
+    \begin{tabular}{lr}
+      \toprule
+      City & Population\\
+      \midrule
+      Mexico City & 20,116,842\\
+      Shanghai & 19,210,000\\
+      Peking & 15,796,450\\
+      Istanbul & 14,160,467\\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+\end{frame}
+\begin{frame}{Blocks}
+  Three different block environments are pre-defined and may be styled with an
+  optional background color.
+
+  \begin{columns}[T,onlytextwidth]
+    \column{0.5\textwidth}
+      \begin{block}{Default}
+        Block content.
+      \end{block}
+
+      \begin{alertblock}{Alert}
+        Block content.
+      \end{alertblock}
+
+      \begin{exampleblock}{Example}
+        Block content.
+      \end{exampleblock}
+
+    \column{0.5\textwidth}
+
+      \metroset{block=fill}
+
+      \begin{block}{Default}
+        Block content.
+      \end{block}
+
+      \begin{alertblock}{Alert}
+        Block content.
+      \end{alertblock}
+
+      \begin{exampleblock}{Example}
+        Block content.
+      \end{exampleblock}
+
+  \end{columns}
+\end{frame}
+\begin{frame}{Math}
+  \begin{equation*}
+    e = \lim_{n\to \infty} \left(1 + \frac{1}{n}\right)^n
+  \end{equation*}
+\end{frame}
+\begin{frame}{Line plots}
+  \begin{figure}
+    \begin{tikzpicture}
+      \begin{axis}[
+        mlineplot,
+        width=0.9\textwidth,
+        height=6cm,
+      ]
+
+        \addplot {sin(deg(x))};
+        \addplot+[samples=100] {sin(deg(2*x))};
+
+      \end{axis}
+    \end{tikzpicture}
+  \end{figure}
+\end{frame}
+\begin{frame}{Bar charts}
+  \begin{figure}
+    \begin{tikzpicture}
+      \begin{axis}[
+        mbarplot,
+        xlabel={Foo},
+        ylabel={Bar},
+        width=0.9\textwidth,
+        height=6cm,
+      ]
+
+      \addplot plot coordinates {(1, 20) (2, 25) (3, 22.4) (4, 12.4)};
+      \addplot plot coordinates {(1, 18) (2, 24) (3, 23.5) (4, 13.2)};
+      \addplot plot coordinates {(1, 10) (2, 19) (3, 25) (4, 15.2)};
+
+      \legend{lorem, ipsum, dolor}
+
+      \end{axis}
+    \end{tikzpicture}
+  \end{figure}
+\end{frame}
+\begin{frame}{Quotes}
+  \begin{quote}
+    Veni, Vidi, Vici
+  \end{quote}
+\end{frame}
+
+{%
+\setbeamertemplate{frame footer}{My custom footer}
+\begin{frame}[fragile]{Frame footer}
+    \themename defines a custom beamer template to add a text to the footer. It can be set via
+    \begin{verbatim}\setbeamertemplate{frame footer}{My custom footer}\end{verbatim}
+\end{frame}
+}
+
+\begin{frame}{References}
+  Some references to showcase [allowframebreaks] \cite{knuth92,ConcreteMath,Simpson,Er01,greenwade93}
+\end{frame}
+
+\section{Conclusion}
+
+\begin{frame}[fragile]{Summary} 
+
+  \begin{itemize}
+
+\end{itemize}
+
+
+
+\end{frame}
+
+{\setbeamercolor{palette primary}{fg=black, bg=yellow}
+\begin{frame}[standout]
+  Questions?
+\end{frame}
+}
+
+\appendix
+
+\begin{frame}[fragile]{Backup slides}
+  Sometimes, it is useful to add slides at the end of your presentation to
+  refer to during audience questions.
+
+  The best way to do this is to include the \verb|appendixnumberbeamer|
+  package in your preamble and call \verb|\appendix| before your backup slides.
+
+  \themename will automatically turn off slide numbering and progress bars for
+  slides in the appendix.
+\end{frame}
+
+\begin{frame}[allowframebreaks]{References}
+  \footnotesize
+  \bibliographystyle{abbrv}
+  \bibliography{slide}
+\end{frame}
+
+\end{document}
