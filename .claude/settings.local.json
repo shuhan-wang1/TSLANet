@@ -37,7 +37,13 @@
       "Bash(python generate_paper_heatmap.py --model_dir saved_models/A8_pl96 --mc_samples 10 --output \"../report_writing/images/compact_heatmap.pdf\")",
       "Bash(python generate_paper_heatmap.py --model_dir saved_models/A8_pl96 --mc_samples 50 --output \"../report_writing/images/compact_heatmap.pdf\")",
       "Bash(pdflatex -interaction=nonstopmode group_report.tex)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(ls /Users/senorita/Desktop/TSLANet-new/Forecasting/*.pt /Users/senorita/Desktop/TSLANet-new/Forecasting/*.pth)",
+      "Bash(ls /Users/senorita/Desktop/TSLANet-new/Forecasting/full_model*)",
+      "Bash(python -c \"import fpdf\")",
+      "Bash(python -c \"import reportlab\")",
+      "Bash(pip install:*)",
+      "Bash(python generate_instruction.py)"
     ]
   }
 }

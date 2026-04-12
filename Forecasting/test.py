@@ -845,7 +845,8 @@ def generate_all_plots(results_dict, output_dir, prefix=''):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Test ProbabilisticTSLANet')
-    parser.add_argument('--model_dir', type=str, required=True, help='Path to saved model directory')
+    parser.add_argument('--model_dir', type=str, default='saved_models/full_model_pl96',
+                        help='Path to saved model directory (default: saved_models/full_model_pl96)')
     parser.add_argument('--mc_samples', type=int, default=None, help='Override MC samples')
     parser.add_argument('--root_path', type=str, default=None, help='Override data root path')
     parser.add_argument('--batch_size', type=int, default=None, help='Override batch size')
