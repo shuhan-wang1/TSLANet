@@ -28,7 +28,16 @@
       "Bash(mv weather_prob_twostage_nomc_pl336_20260317_230534 A6_pl336)",
       "Bash(ls /Users/senorita/Desktop/TSLANet-new/Forecasting/*.sh)",
       "Bash(mv weather_prob_auxmse0.3_mc_pl96_20260319_053319 A7_pl96)",
-      "Bash(mv weather_prob_auxmse0.3_mc_pl336_20260319_064718 A7_pl336)"
+      "Bash(mv weather_prob_auxmse0.3_mc_pl336_20260319_064718 A7_pl336)",
+      "Bash(zip -r C:/Users/shuhan/Desktop/UCL/adl/Forecasting.zip Forecasting/train.py Forecasting/test.py Forecasting/run_all.sh Forecasting/instruction.pdf Forecasting/data/weather/ Forecasting/saved_models/ -x 'Forecasting/__pycache__/*')",
+      "Bash(rm -f \"C:/Users/shuhan/Desktop/UCL/adl/Group29.zip\")",
+      "Bash(zip -r C:/Users/shuhan/Desktop/UCL/adl/Group29.zip Forecasting/train.py Forecasting/test.py Forecasting/run_all.sh Forecasting/instruction.pdf Forecasting/data/weather/ Forecasting/saved_models/A8_pl96/ Forecasting/saved_models/A8_pl336/ -x 'Forecasting/__pycache__/*')",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(python -c ':*)",
+      "Bash(python generate_paper_heatmap.py --model_dir saved_models/A8_pl96 --mc_samples 10 --output \"../report_writing/images/compact_heatmap.pdf\")",
+      "Bash(python generate_paper_heatmap.py --model_dir saved_models/A8_pl96 --mc_samples 50 --output \"../report_writing/images/compact_heatmap.pdf\")",
+      "Bash(pdflatex -interaction=nonstopmode group_report.tex)",
+      "Bash(find:*)"
     ]
   }
 }

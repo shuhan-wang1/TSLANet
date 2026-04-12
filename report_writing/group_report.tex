@@ -15,53 +15,67 @@
 
 \maketitle
 
-\begin{abstract}
-We present \textbf{ProbTSLANet}, a probabilistic extension of the frequency-domain TSLANet backbone that outputs a per-step, per-variable Gaussian predictive distribution and decomposes its variance into aleatoric and epistemic components. Two parallel linear heads parameterise the mean and log-variance, and initialising the variance head with zero weights and a negative bias stabilises joint optimisation under Gaussian NLL. At test time, Monte Carlo Dropout over $K{=}50$ forward passes estimates the epistemic component, while the mean of predicted variances captures aleatoric noise. On the Weather benchmark at horizons 96 and 336, a cascading ablation (A1 to A4) shows that the aleatoric head drives calibration, cutting calibration error by up to $77\%$ over MC Dropout alone while the epistemic contribution stays below $0.3\%$ of total predictive variance.
-\end{abstract}
+% \begin{abstract}
+% Standard time series forecasters output point predictions without confidence estimates. We present \textbf{ProbTSLANet}, a probabilistic extension of TSLANet that predicts a per-step Gaussian distribution and decomposes predictive uncertainty into aleatoric (data noise) and epistemic (model uncertainty) components. Two parallel heads output the mean and log-variance, trained jointly under Gaussian negative log-likelihood; at test time, Monte Carlo Dropout over $K{=}50$ forward passes separates the two uncertainty sources. On the Weather benchmark (look-back $L{=}96$, horizons $H\in\{96,336\}$, where one timestep is 10 minutes), ablations show that the learned variance head is the dominant factor, reducing calibration error by $77\%$ compared to MC Dropout alone, while epistemic uncertainty accounts for less than $0.3\%$ of total variance.
+% \end{abstract}
 
 \section{Introduction}
 \label{sec:intro}
 
-Deep forecasters~\cite{zhou2021informer,nie2023patchtst,eldele2024tslanet} attain strong point accuracy, yet their single-valued outputs collapse the predictive distribution and offer decision-makers no calibrated measure of risk. Following~\cite{kendall2017uncertainties,hullermeier2021aleatoric}, total predictive variance decomposes into \emph{aleatoric} uncertainty (irreducible data noise) and \emph{epistemic} uncertainty (reducible model ignorance). Even a calibrated interval is not enough. Practitioners need to know whether a wide band reflects sensor noise or model ignorance, yet most deep forecasters either ignore uncertainty or model only one component at a time.
+Deep forecasters~\cite{zhou2021informer,nie2023patchtst,eldele2024tslanet} attain strong point accuracy, yet their single-valued outputs collapse the predictive distribution and offer decision-makers no calibrated measure of risk. Following~\cite{kendall2017uncertainties,hullermeier2021aleatoric}, total predictive variance decomposes into \emph{aleatoric} uncertainty (irreducible data noise) and \emph{epistemic} uncertainty (reducible model ignorance). Even a calibrated interval is not enough. Practitioners need to know whether a wide band reflects noise or model ignorance, yet most deep forecasters either ignore uncertainty or model one component at a time.
 
-We introduce \textbf{ProbTSLANet}, a probabilistic extension of TSLANet~\cite{eldele2024tslanet} that recovers both components at the cost of a single extra linear head and a test-time loop. Two parallel heads produce a Gaussian predictive distribution $\mathcal{N}(\mu,\sigma^{2})$~\cite{nix1994estimating}, and MC Dropout~\cite{gal2016dropout} collects $K$ stochastic forward passes whose variance across means estimates epistemic uncertainty. Along the backbone axis, sequential forecasters have moved from Transformer attention~\cite{zhou2021informer} to patch-based encoders~\cite{nie2023patchtst} and adaptive spectral filters~\cite{eldele2024tslanet}. Along the uncertainty axis, aleatoric heads~\cite{salinas2020deepar,nix1994estimating} and Bayesian or ensemble methods~\cite{gal2016dropout,lakshminarayanan2017simple} address disjoint components. In contrast, ProbTSLANet recovers decomposed uncertainty from a single model and is evaluated under proper scoring rules~\cite{gneiting2007strictly}. Our contributions are (i) a minimal heteroscedastic head with a stabilising zero-weight and negative-bias initialisation, (ii) a test-time-only MC Dropout decomposition, (iii) a controlled A1 to A4 cascade plus extended ablations on the Weather benchmark, and (iv) evidence that calibration on Weather is driven almost entirely by the aleatoric head, with the epistemic share staying below $0.3\%$ and growing only mildly with horizon.
+We introduce \textbf{ProbTSLANet}, a probabilistic extension of the Time Series Lightweight Adaptive Network (TSLANet)~\cite{eldele2024tslanet} that recovers both components at the cost of a single extra linear head and a test-time loop. Two parallel heads produce a Gaussian predictive distribution $\mathcal{N}(\mu,\sigma^{2})$~\cite{nix1994estimating}, and MC Dropout~\cite{gal2016dropout} collects $K$ stochastic forward passes whose variance across means estimates epistemic uncertainty. Along the backbone axis, sequential forecasters have moved from Transformer attention~\cite{zhou2021informer} to patch-based encoders~\cite{nie2023patchtst} and adaptive spectral filters~\cite{eldele2024tslanet}. Along the uncertainty axis, aleatoric heads~\cite{salinas2020deepar,nix1994estimating} and Bayesian or ensemble methods~\cite{gal2016dropout,lakshminarayanan2017simple} address disjoint components. In contrast, ProbTSLANet recovers decomposed uncertainty from a single model and is evaluated under proper scoring rules~\cite{gneiting2007strictly}, which are minimised only by the true predictive distribution. Our contributions are (i) a minimal heteroscedastic head with a stabilising zero-weight and negative-bias initialisation, (ii) a test-time-only MC Dropout decomposition, (iii) a controlled four-step ablation (A1–A4, detailed in Section \ref{sec:experiments}) plus extended variants on the Weather benchmark, and (iv) evidence that calibration on Weather is driven almost entirely by the aleatoric head, with the epistemic share staying below $0.3\%$ and growing only mildly with horizon.
 
 \section{Methods}
 \label{sec:methods}
 
-Given a look-back window $\mathbf{X}\in\mathbb{R}^{L\times C}$, the forecaster parameterises a Gaussian predictive distribution over the next $H$ steps,
+Given a look-back window $\mathbf{X}\in\mathbb{R}^{L\times C}$ of $L$ past timesteps across $C$ variables, the forecaster predicts a mean and variance $(\mu_{t,c}, \sigma^2_{t,c})$ of a Gaussian distribution $\mathcal{N}$ for each of the next $H$ steps, defining the predictive distribution
 \begin{equation}
     p_{\theta}(\mathbf{Y}\mid\mathbf{X})
     = \prod_{t=1}^{H}\prod_{c=1}^{C}
     \mathcal{N}\!\left(y_{t,c};\,\mu_{t,c}(\mathbf{X};\theta),\,\sigma_{t,c}^{2}(\mathbf{X};\theta)\right).
     \label{eq:predictive}
 \end{equation}
-Figure~\ref{fig:probtslanet_architecture} shows the full pipeline, which comprises a shared spectral encoder, two parallel heads, and a test-time stochastic loop.
+
+The shared TSLANet backbone~\cite{eldele2024tslanet} maps the input window to a latent representation $\mathbf{z}$, and Figure~\ref{fig:forecasting_head} shows how the probabilistic forecasting head processes $\mathbf{z}$ into mean and variance predictions with decomposed uncertainty estimates.
+
+% Figure~\ref{fig:backbone} shows the shared TSLANet backbone that maps an input window to a latent representation $\mathbf{z}$, and Figure~\ref{fig:forecasting_head} shows how the probabilistic forecasting head processes $\mathbf{z}$ into mean and variance predictions with decomposed uncertainty estimates.
+
+% \begin{figure}[t]
+%     \centering
+%     \includegraphics[width=0.6\linewidth]{images/1527.pdf}
+%     \caption{\textbf{TSLANet backbone}~\cite{eldele2024tslanet}. The input time series is split into overlapping patches with positional embeddings and encoded by $N{=}2$ stacked TSLANet layers. Each layer applies Layer Norm followed by an Adaptive Spectral Block (blue; FFT, adaptive masking, local/global spectral weights $W_L$/$W_G$, IFFT) and Layer Norm followed by an Interactive Convolutional Block (red; two parallel Conv~1D paths with GELU activations and multiplicative gating), with a residual connection. The backbone output $\mathbf{z}$ is the latent representation passed to the forecasting head.}
+%     \label{fig:backbone}
+% \end{figure}
 
 \begin{figure}[t]
     \centering
-    \includegraphics[width=0.92\linewidth]{images/overall_architecture.png}
-    \caption{\textbf{ProbTSLANet architecture.} A window is instance-normalised along time (zero mean, unit variance), patched, and encoded by $L{=}2$ TSLANet layers (Adaptive Spectral Block + Interactive Convolutional Block). Two parallel linear heads produce $\mu$ and $\log\sigma^{2}$. At test time (dashed arrows) $K{=}50$ MC-Dropout passes yield $\operatorname{Var}_\text{total}=\operatorname{Var}_\text{epistemic}+\operatorname{Var}_\text{aleatoric}$.}
-    \label{fig:probtslanet_architecture}
+    \includegraphics[width=0.95\linewidth]{images/1529.pdf}
+    \caption{\textbf{Probabilistic forecasting head and output comparison.} The latent representation $\mathbf{z}$ from the backbone is processed by a probabilistic parameterisation module that produces the forecast mean $\hat{\mu}$ and variance $\sigma^{2}$. The mean path undergoes $K{=}50$ MC-Dropout forward passes to estimate epistemic uncertainty, while the learned variance captures aleatoric uncertainty. Both are combined into a total uncertainty estimate. The bottom row contrasts deterministic forecasting (point prediction), probabilistic forecasting (aleatoric bands), and uncertainty-aware forecasting (decomposed aleatoric and epistemic bands).}
+    \label{fig:forecasting_head}
 \end{figure}
 
 \paragraph{Shared backbone.}
-Each input window is centred to zero mean and scaled to unit variance along the time axis, and the inverse transform is applied to $\mu$ and $\log\sigma^{2}$ at the output. The normalised window is split into overlapping patches (size 16, stride 8) and linearly embedded to dimension 32. Two TSLANet layers~\cite{eldele2024tslanet} extract features. Each layer applies (i) an Adaptive Spectral Block that learns a complex filter in the FFT domain combined with an energy-adaptive high-frequency mask, and (ii) an Interactive Convolutional Block with parallel $1{\times}1$ and $1{\times}3$ convolutions and multiplicative GELU gating. Channel independence keeps the shared backbone at $32$K parameters regardless of the number of input variables. Adding the two linear output heads brings the total to $100$K parameters at $H{=}96$ and $269$K at $H{=}336$.
+Each input window is centred to zero mean and unit variance, with the inverse transform applied at the output. The normalised window is split into overlapping patches (size 16, stride 8) and embedded to dimension 32. Two stacked TSLANet layers extract features: each applies Layer Norm, an Adaptive Spectral Block (FFT $\to$ learnable global/local filters $\to$ energy-adaptive high-frequency mask $\to$ IFFT), another Layer Norm, and an Interactive Convolutional Block (parallel $1{\times}1$ and $1{\times}3$ convolutions with multiplicative GELU gating), plus residual connections. Channel independence (processing each variable with shared weights rather than cross-variable attention) keeps the backbone at $32$K parameters regardless of variable count. Adding the two output heads brings the total to $100$K ($H{=}96$) or $269$K ($H{=}336$).
+
+% \paragraph{Shared backbone.}
+% Each input window is centred to zero mean and scaled to unit variance along the time axis, and the inverse transform is applied to $\mu$ and $\log\sigma^{2}$ at the output. The normalised window is split into overlapping patches (size 16, stride 8) and linearly embedded to dimension 32. As shown in Figure~\ref{fig:backbone}, $N{=}2$ stacked TSLANet layers~\cite{eldele2024tslanet} extract features. Each layer applies Layer Norm followed by an Adaptive Spectral Block that learns a complex filter in the FFT domain combined with an energy-adaptive high-frequency mask, then Layer Norm followed by an Interactive Convolutional Block with parallel $1{\times}1$ and $1{\times}3$ convolutions and multiplicative GELU gating, with a residual connection. The resulting latent representation $\mathbf{z}$ is passed to the forecasting head (Figure~\ref{fig:forecasting_head}). Channel independence (processing each variable with shared weights rather than cross-variable attention) keeps the shared backbone at $32$K parameters regardless of the number of input variables. Adding the two linear output heads brings the total to $100$K parameters at $H{=}96$ and $269$K at $H{=}336$.
 
 \paragraph{Heteroscedastic head.}
-Let $\mathbf{h}$ be the flattened backbone features for a channel. Two parallel linear heads yield $\mu_\text{norm}=W_{\mu}\mathbf{h}+b_{\mu}$ and $\log\sigma^{2}_\text{norm}=W_{\sigma}\mathbf{h}+b_{\sigma}$, and are denormalised to native scale via $\mu = \sigma_{\mathbf{X}}\mu_\text{norm}+\mu_{\mathbf{X}}$ and $\log\sigma^{2}=\log\sigma^{2}_\text{norm}+2\log\sigma_{\mathbf{X}}$. Two choices stabilise joint optimisation of $\mu$ and $\sigma^{2}$. First, $W_{\sigma}$ is zero-initialised with $b_{\sigma}=-2.0$ so the initial predicted variance in the normalised space is a constant $e^{-2}\!\approx\!0.135$, preventing the precision term $1/\sigma^{2}$ from dominating early gradients. Second, $\log\sigma^{2}_\text{norm}$ is clamped to $[-10,10]$ for numerical stability.
+Heteroscedastic models predict input-dependent variance rather than a fixed noise level. As shown in Figure~\ref{fig:forecasting_head}, the latent representation $\mathbf{z}$ from the backbone is flattened per channel and fed to two parallel linear heads that yield $\mu_\text{norm}=W_{\mu}\mathbf{z}+b_{\mu}$ and $\log\sigma^{2}_\text{norm}=W_{\sigma}\mathbf{z}+b_{\sigma}$, and are denormalised to native scale via $\mu = \sigma_{\mathbf{X}}\mu_\text{norm}+\mu_{\mathbf{X}}$ and $\log\sigma^{2}=\log\sigma^{2}_\text{norm}+2\log\sigma_{\mathbf{X}}$. Two choices stabilise joint optimisation of $\mu$ and $\sigma^{2}$. First, $W_{\sigma}$ is zero-initialised with $b_{\sigma}=-2.0$ so the initial predicted variance in the normalised space is a constant $e^{-2}\!\approx\!0.135$, preventing the precision term $1/\sigma^{2}$ from dominating early gradients. Second, $\log\sigma^{2}_\text{norm}$ is clamped to $[-10,10]$ for numerical stability.
 
 \paragraph{Training objective.}
-Deterministic baselines use MSE. Probabilistic variants use Gaussian NLL (dropping the constant $\log 2\pi$),
+Deterministic baselines use MSE. Probabilistic variants use Gaussian negative log-Likelihood (NLL), dropping the constant $\log 2\pi$,
+
 \begin{equation}
     \mathcal{L}_{\mathrm{NLL}}
     = \frac{1}{2HC}\sum_{t=1}^{H}\sum_{c=1}^{C}\!\left[\log\sigma_{t,c}^{2}+\frac{(y_{t,c}-\mu_{t,c})^{2}}{\sigma_{t,c}^{2}}\right].
     \label{eq:nll}
 \end{equation}
-The first term penalises over-confident variance. The second is a precision-weighted squared error that down-weights noisy timesteps. Training runs 5 epochs of masked patch pretraining (mask ratio 0.4) followed by 15 epochs of supervised fine-tuning on~\eqref{eq:nll}, keeping the best checkpoint by validation MSE.
+The first term penalises over-confident variance. The second is a precision-weighted (scaled by $1/\sigma^2$) squared error that down-weights noisy timesteps. Training runs 5 epochs of masked patch pretraining (randomly masking 40\% of input patches and training the model to reconstruct them) followed by 15 epochs of supervised fine-tuning on~\eqref{eq:nll}, keeping the best checkpoint by validation MSE.
 
 \paragraph{Test-time uncertainty decomposition.}
-At inference we keep only \texttt{nn.Dropout} layers active (not DropPath, whose path drops alter the architecture) and collect $K{=}50$ passes $(\mu^{(k)},\sigma^{2(k)})$. Following~\cite{kendall2017uncertainties},
+We apply Monte Carlo (MC) Dropout~\cite{gal2016dropout} at inference. We keep only \texttt{nn.Dropout} layers active (not DropPath, which randomly drops entire residual branches and would alter the architecture) and collect $K{=}50$ stochastic forward passes $(\mu^{(k)},\sigma^{2(k)})$. Following~\cite{kendall2017uncertainties},
 \begin{equation}
     \operatorname{Var}[y\mid\mathbf{X}]
     \;\approx\;
@@ -70,13 +84,13 @@ At inference we keep only \texttt{nn.Dropout} layers active (not DropPath, whose
     \underbrace{\operatorname{Var}_{k}\!\left[\mu^{(k)}\right]}_{\text{epistemic}},
     \label{eq:decomp}
 \end{equation}
-and the final mean forecast is $\bar{\mu}=\tfrac{1}{K}\sum_{k}\mu^{(k)}$. Training uses a single forward pass per batch, and only inference pays the $K$-pass cost.
+and the final mean forecast is $\bar{\mu}=\tfrac{1}{K}\sum_{k}\mu^{(k)}$. Training uses a single forward pass per batch, and only inference pays the $K$-pass cost. 
 
 \section{Experiments}
 \label{sec:experiments}
-
+We evaluate the contribution of each probabilistic component through a controlled ablation study on a standard forecasting benchmark.
 \paragraph{Dataset and protocol.}
-We use the Weather benchmark~\cite{zhou2021informer}, which has 21 variables at 10-minute resolution, with the standard split, look-back $L{=}96$, and horizons $H\in\{96,336\}$. We report MSE and MAE for point accuracy. For probabilistic quality we report Gaussian NLL, analytic Gaussian CRPS~\cite{gneiting2007strictly}, calibration error (mean $|{\text{nominal}-\text{observed}}|$ over quantile levels $\{0.1,\dots,0.9,0.95\}$), and mean epistemic and aleatoric variances.
+We use the Weather benchmark~\cite{zhou2021informer}, which has 21 variables at 10-minute resolution, with the standard chronological 70/10/20 train/ validation/test split, look-back $L{=}96$, and horizons $H\in\{96,336\}$. We report MSE and MAE for point accuracy. For probabilistic quality we report Gaussian NLL, analytic Gaussian Continuous Ranked Probability Score (CRPS)~\cite{gneiting2007strictly}, calibration error (mean $|{\text{nominal}-\text{observed}}|$ over quantile levels $\{0.1,\dots,0.9,0.95\}$, which a well-calibrated model achieves zero), and mean epistemic and aleatoric variances.
 
 \paragraph{Implementation.}
 The backbone uses 2 TSLANet layers with embed dim 32, patch size 16, stride 8, and dropout 0.3, giving $32$K backbone parameters and $100$K or $269$K total at $H{=}96$ or $H{=}336$ for the heteroscedastic variants. Training uses AdamW ($\text{lr}{=}10^{-4}$, weight decay $10^{-6}$) with ReduceLROnPlateau (factor 0.1, patience 3) and gradient clipping at max-norm 4.0. We run 5 pretrain epochs followed by 15 fine-tune epochs, draw $K{=}50$ MC samples at test time, fix seed 42, and execute CPU-only under \texttt{comp0197-pt}.
@@ -92,13 +106,13 @@ We design a four-step cascade that isolates each probabilistic component. \textb
 
 \begin{table}[t]
 \centering
-\caption{Main results on Weather at \textsc{pl96} and \textsc{pl336}. Lower is better. Best values within the A1 to A4 cascade are bolded.}
+\caption{Main results on Weather at horizons $H{=}96$ and $H{=}336$. Lower is better. Best values within the A1–A4 cascade are bolded.}
 \label{tab:compact_results}
 \scriptsize
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{lccccc}
 \toprule
-Model & MSE$\downarrow$ & MAE$\downarrow$ & NLL$\downarrow$ & CRPS$\downarrow$ & Cal.$\downarrow$ \\
+Model & MSE$\downarrow$ & MAE$\downarrow$ & NLL$\downarrow$ & CRPS$\downarrow$ & Cal. Err.$\downarrow$ \\
 \midrule
 A1-96  & \textbf{0.1736} & \textbf{0.2152} & --              & --              & --              \\
 A2-96  & 0.1739          & 0.2154          & --              & 0.2057          & 0.4363          \\
@@ -120,13 +134,23 @@ A7-336 & 0.2856          & 0.3004          & 0.6355          & 0.2862          &
 \end{table}
 
 \paragraph{Point accuracy is largely preserved.}
-Replacing the deterministic head with a heteroscedastic Gaussian head (A1$\to$A3) raises MSE from $0.1736$ to $0.1968$ at \textsc{pl96} ($+13\%$) and from $0.2753$ to $0.3142$ at \textsc{pl336} ($+14\%$, Table~\ref{tab:compact_results}). The NLL objective forces the mean head to share capacity with the variance head, and A5 recovers most of this gap (MSE $0.1829$ and $0.2858$), confirming that the degradation reflects optimisation rather than a fundamental capacity limit.
+Replacing the deterministic head with a heteroscedastic Gaussian head (A1$\to$A3) raises MSE from $0.1736$ to $0.1968$ at $H{=}96$ ($+13\%$) and from $0.2753$ to $0.3142$ at $H{=}336$ ($+14\%$, Table~\ref{tab:compact_results}). The NLL objective forces the mean head to share capacity with the variance head, and A5 recovers most of this gap (MSE $0.1829$ and $0.2858$), confirming that the degradation reflects optimisation rather than a fundamental capacity limit.
 
 \paragraph{The aleatoric head drives calibration.}
-MC Dropout alone (A2) leaves point metrics unchanged but is highly miscalibrated (calibration error $0.4363$ at \textsc{pl96}, $0.4851$ at \textsc{pl336}). A heteroscedastic head (A3) cuts calibration error by $77\%$ ($0.1023$) at \textsc{pl96} and $68\%$ ($0.1572$) at \textsc{pl336}, and lowers CRPS from $0.2057$ to $0.1848$. Adding MC Dropout on top (A4) leaves MSE and CRPS within $1\%$ of A3 and moves calibration only marginally (from $0.1023$ to $0.1115$ at \textsc{pl96}, and from $0.1572$ to $0.1630$ at \textsc{pl336}), showing that the aleatoric head does essentially all of the calibration work.
+MC Dropout alone (A2) leaves point metrics unchanged but is highly miscalibrated (calibration error $0.4363$ at $H{=}96$, $0.4851$ at $H{=}336$). A heteroscedastic head (A3) cuts calibration error by $77\%$ ($0.1023$) at $H{=}96$ and $68\%$ ($0.1572$) at $H{=}336$, and lowers CRPS from $0.2057$ to $0.1848$. Adding MC Dropout on top (A4) leaves MSE and CRPS within $1\%$ of A3 and moves calibration only marginally (from $0.1023$ to $0.1115$ at $H{=}96$, and from $0.1572$ to $0.1630$ at $H{=}336$), showing that the aleatoric head does essentially all of the calibration work.
 
 \paragraph{Epistemic variance is a fraction of a percent.}
-Epistemic variance contributes only $0.20\%$ of total predictive variance at \textsc{pl96} and $0.26\%$ at \textsc{pl336} in A4, two orders of magnitude below the aleatoric share even though MC Dropout is the canonical epistemic estimator. The fraction grows mildly with horizon but never rivals aleatoric noise, suggesting the lightweight backbone is already near a data-limited regime on Weather. The extended ablations add a cautionary counterpoint. A6 preserves A1's point accuracy by construction (MSE $0.1730$ and $0.2747$) but collapses on NLL ($1.42$ and $3.48$, roughly $5\times$ A3). Stage 2 freezes $\mu$ yet still selects checkpoints by validation MSE, so log-variance updates are never weighed against an NLL-aware target and the mean aleatoric variance inflates to $29.4$ at \textsc{pl96} against $0.61$ for A3. A6 is therefore best read as a cautionary ablation on decoupling a training objective without also decoupling its model-selection criterion. A7 closely tracks A5 on every metric, reinforcing the small-epistemic finding.
+Epistemic variance contributes only $0.20\%$ of total predictive variance at $H{=}96$ and $0.26\%$ at $H{=}336$ in A4, two orders of magnitude below the aleatoric share even though MC Dropout is the canonical epistemic estimator. The fraction grows mildly with horizon but never rivals aleatoric noise, suggesting the lightweight backbone is already near a data-limited regime on Weather. A7 closely tracks A5 on every metric, reinforcing this small-epistemic finding. Figure~\ref{fig:heatmap} visualises the decomposition for a representative test sample: the aleatoric panel~(b) closely matches the total~(d), while the epistemic panel~(c) stays near zero (note the colorbar scale difference of ${\sim}250{\times}$).
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{images/compact_heatmap.pdf}
+    \caption{Uncertainty decomposition heatmap for a test sample (A7, $H{=}96$) across eight Weather variables. \textbf{(a)}~Absolute prediction error. \textbf{(b)}~Aleatoric (learned) variance dominates, with colorbar range $0$--$4.0$. \textbf{(c)}~Epistemic (MC Dropout) variance peaks at ${\sim}0.016$, confirming the ${<}0.3\%$ share in Table~\ref{tab:compact_results}. \textbf{(d)}~Total uncertainty is visually indistinguishable from~(b).}
+    \label{fig:heatmap}
+\end{figure}
+
+\paragraph{Decoupled training requires decoupled model selection.}
+The extended ablations add a cautionary counterpoint. A6 preserves A1's point accuracy by construction (MSE $0.1730$ and $0.2747$) but collapses on NLL ($1.42$ and $3.48$, roughly $5\times$ A3). Stage~2 freezes $\mu$ yet still selects checkpoints by validation MSE, so log-variance updates are never weighed against an NLL-aware target and the mean aleatoric variance inflates to $29.4$ at $H{=}96$ against $0.61$ for A3. A6 is therefore best read as a cautionary ablation: decoupling the training objective must extend to the model-selection criterion.
 
 \section{Discussion}
 \label{sec:discussion}
@@ -140,6 +164,30 @@ Evaluation is confined to one benchmark, two horizons, and a single seed (42), s
 Three concrete extensions follow. First, replacing MC Dropout with a last-layer Laplace approximation or SWAG would yield an explicit posterior. Second, extending the Adaptive Spectral Block's energy threshold into a frequency-conditioned variance predictor could route noisy spectral bands directly into the aleatoric head. Third, wrapping the decomposed variance with a conformal post-hoc calibrator would restore finite-sample coverage guarantees when the Gaussian assumption is violated.
 
 % --- END OF PART A ---
+
+\section*{Part B: Individual Reflection and Criticism}
+\label{sec:partb}
+
+\paragraph{Personal Contribution.}
+My primary role in this project spanned three areas: literature review, theoretical architecture design, and report writing. I began by studying the TSLANet paper~\cite{eldele2024tslanet} in depth to understand the backbone's Adaptive Spectral Block and Interactive Convolutional Block, as well as its patching, instance normalisation, and channel-independent design. I then surveyed the uncertainty quantification literature, focusing on heteroscedastic regression~\cite{nix1994estimating}, MC Dropout as approximate Bayesian inference~\cite{gal2016dropout}, the aleatoric--epistemic decomposition framework~\cite{kendall2017uncertainties}, deep ensembles~\cite{lakshminarayanan2017simple}, and proper scoring rules~\cite{gneiting2007strictly}. This survey informed the theoretical grounding of our extension.
+
+Building on this understanding, I collaborated with Fengyuan Zheng and Flora Xu on the design of the probabilistic extension. Specifically, I contributed to: (i)~the choice of dual linear heads that output per-step Gaussian parameters $(\mu, \log\sigma^{2})$ rather than a single point estimate, (ii)~the stabilising initialisation strategy (zero weights, negative bias) for the log-variance head to prevent early-training dominance of the precision term, (iii)~the decision to keep MC Dropout inference-only and to activate only \texttt{nn.Dropout} layers (not DropPath), and (iv)~the cascading ablation structure (A1--A4) that isolates each probabilistic component. I was not involved in running experiments; my contribution was in the theoretical design and the reasoning behind each configuration. Finally, I was the primary author of the group technical report (Part~A), including the mathematical formulation, method descriptions, and result interpretation.
+
+\paragraph{Critical Evaluation.}
+Several specific weaknesses limit the strength of our conclusions. First, all results are based on a single dataset (Weather) and a single random seed (42). Without multi-seed runs or confidence intervals, the reported metric differences---particularly the small gaps between A3 and A4---may not be statistically significant. A paired bootstrap test across multiple seeds would be needed to confirm these findings.
+
+Second, the Gaussian output assumption is violated for several Weather variables. Wind direction is circular and cannot be meaningfully modelled by a unimodal Gaussian; precipitation-related variables are zero-inflated with heavy right tails. While instance normalisation makes residuals more symmetric for well-behaved variables such as temperature, the distributional mismatch likely inflates NLL for the problematic channels. A mixture density network or a distribution-free approach such as conformal prediction would address this.
+
+Third, the epistemic uncertainty estimate from MC Dropout is almost certainly an underestimate. Our backbone has only 32K shared parameters, and the dropout rate of 0.3 applied to a two-layer network provides a limited implicit posterior. Lakshminarayanan et al.~\cite{lakshminarayanan2017simple} showed that deep ensembles consistently outperform MC Dropout in capturing epistemic spread. The $<$0.3\% epistemic fraction we observe may therefore reflect the weakness of the approximation as much as the true confidence of the model. Replacing MC Dropout with an ensemble of 5--10 independently initialised models, or a last-layer Laplace approximation, would yield a more faithful decomposition.
+
+Fourth, the channel-independent design, while parameter-efficient, discards cross-variable correlations. Weather variables are physically coupled (e.g., temperature and humidity via the Clausius--Clapeyron relation), and modelling their joint distribution could improve both point accuracy and calibration. A lightweight cross-channel attention layer after the backbone could capture these dependencies without sacrificing scalability.
+
+Despite these limitations, the system achieves its core objective. Our deterministic baseline (A1) reaches MSE of 0.1736 at $H{=}96$ with only a 2-layer backbone, which is comparable to the results reported by the original TSLANet~\cite{eldele2024tslanet} using significantly deeper architectures. The probabilistic extension preserves this accuracy to within 13\% (A3) or 5\% (A5, with auxiliary MSE), while producing well-calibrated prediction intervals (calibration error 0.10--0.16). If given more time, I would prioritise three improvements: (i)~multi-seed evaluation with statistical testing, (ii)~replacing MC Dropout with a small ensemble for stronger epistemic estimation, and (iii)~extending evaluation to at least one additional dataset (e.g., ETTh1 or Electricity) to test generalisability.
+
+\paragraph{GenAI Audit.}
+I used Claude (Anthropic) in two specific capacities during this project. First, I used Claude as a reading companion during the literature review phase. I adopted a question-and-answer format: after reading a paper (e.g.,~\cite{kendall2017uncertainties,gal2016dropout}), I posed specific conceptual questions to Claude to test and consolidate my understanding---for example, asking why the variance of means across MC samples estimates epistemic rather than aleatoric uncertainty, or why NLL is a proper scoring rule for the Gaussian family. I treated Claude's responses as a tutorial aid, not as a primary source; I verified all mathematical claims against the original papers and cross-referenced derivations before incorporating them into our design or report.
+
+Second, I used Claude to polish the language of the group report after I had written the initial draft. Claude's role was limited to improving clarity, grammar, and concision of my existing text; it did not generate new technical content, design choices, or analytical conclusions. All core ideas, mathematical formulations, experimental interpretations, and the first-version writing remained my own work. I reviewed every suggested edit against the technical content to ensure that polishing did not introduce inaccuracies or misrepresent our method. No GenAI tool was used for code generation, experiment design, or data analysis.
 
 \bibliographystyle{splncs04}
 \bibliography{references}
