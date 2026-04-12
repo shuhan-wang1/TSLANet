@@ -1,0 +1,36 @@
+\begin{thebibliography}{10}
+\providecommand{\url}[1]{\texttt{#1}}
+\providecommand{\urlprefix}{URL }
+\providecommand{\doi}[1]{https://doi.org/#1}
+
+\bibitem{eldele2024tslanet}
+Eldele, E., Ragab, M., Chen, Z., Wu, M., Li, X.: {TSLANet}: Rethinking transformers for time series representation learning. In: International Conference on Machine Learning (ICML) (2024)
+
+\bibitem{gal2016dropout}
+Gal, Y., Ghahramani, Z.: Dropout as a {B}ayesian approximation: Representing model uncertainty in deep learning. In: International Conference on Machine Learning (ICML) (2016)
+
+\bibitem{gneiting2007strictly}
+Gneiting, T., Raftery, A.E.: Strictly proper scoring rules, prediction, and estimation. Journal of the American Statistical Association  \textbf{102}(477),  359--378 (2007)
+
+\bibitem{hullermeier2021aleatoric}
+H{\"u}llermeier, E., Waegeman, W.: Aleatoric and epistemic uncertainty in machine learning: An introduction to concepts and methods. Machine Learning  \textbf{110}(3),  457--506 (2021)
+
+\bibitem{kendall2017uncertainties}
+Kendall, A., Gal, Y.: What uncertainties do we need in {B}ayesian deep learning for computer vision? In: Advances in Neural Information Processing Systems (NeurIPS) (2017)
+
+\bibitem{lakshminarayanan2017simple}
+Lakshminarayanan, B., Pritzel, A., Blundell, C.: Simple and scalable predictive uncertainty estimation using deep ensembles. In: Advances in Neural Information Processing Systems (NeurIPS) (2017)
+
+\bibitem{nie2023patchtst}
+Nie, Y., Nguyen, N.H., Sinthong, P., Kalagnanam, J.: A time series is worth 64 words: Long-term forecasting with {T}ransformers. In: International Conference on Learning Representations (ICLR) (2023)
+
+\bibitem{nix1994estimating}
+Nix, D.A., Weigend, A.S.: Estimating the mean and variance of the target probability distribution. In: IEEE International Conference on Neural Networks (ICNN). pp. 55--60 (1994)
+
+\bibitem{salinas2020deepar}
+Salinas, D., Flunkert, V., Gasthaus, J., Januschowski, T.: {DeepAR}: Probabilistic forecasting with autoregressive recurrent networks. International Journal of Forecasting  \textbf{36}(3),  1181--1191 (2020)
+
+\bibitem{zhou2021informer}
+Zhou, H., Zhang, S., Peng, J., Zhang, S., Li, J., Xiong, H., Zhang, W.: {Informer}: Beyond efficient {T}ransformer for long sequence time-series forecasting. In: AAAI Conference on Artificial Intelligence (AAAI) (2021)
+
+\end{thebibliography}

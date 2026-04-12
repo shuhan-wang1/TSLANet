@@ -1,0 +1,79 @@
+\relax 
+\citation{zhou2021informer,nie2023patchtst,eldele2024tslanet}
+\citation{kendall2017uncertainties,hullermeier2021aleatoric}
+\citation{eldele2024tslanet}
+\citation{nix1994estimating}
+\citation{gal2016dropout}
+\citation{zhou2021informer}
+\citation{nie2023patchtst}
+\citation{eldele2024tslanet}
+\citation{salinas2020deepar,nix1994estimating}
+\citation{gal2016dropout,lakshminarayanan2017simple}
+\citation{gneiting2007strictly}
+\citation{eldele2024tslanet}
+\@writefile{toc}{\contentsline {title}{ProbTSLANet: Probabilistic Time Series Forecasting with Uncertainty Decomposition}{1}{}\protected@file@percent }
+\@writefile{toc}{\authcount {1}}
+\@writefile{toc}{\contentsline {author}{Chi Wang Cheung, Xuanhao Gu, Scarlett He, Baorui Li, Tongjia Li, \unskip \ \ignorespaces  Zhiyuan Luo, Shuhan Wang, Flora Xu, Fengyuan Zheng}{1}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{}\protected@file@percent }
+\newlabel{sec:intro}{{1}{1}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Methods}{1}{}\protected@file@percent }
+\newlabel{sec:methods}{{2}{1}{}{}{}}
+\newlabel{eq:predictive}{{1}{1}{}{}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces \textbf  {Probabilistic forecasting head and output comparison.} The latent representation $\mathbf  {z}$ from the backbone is processed by a probabilistic parameterisation module that produces the forecast mean $\hat  {\mu }$ and variance $\sigma ^{2}$. The mean path undergoes $K{=}50$ MC-Dropout forward passes to estimate epistemic uncertainty, while the learned variance captures aleatoric uncertainty. Both are combined into a total uncertainty estimate. The bottom row contrasts deterministic forecasting (point prediction), probabilistic forecasting (aleatoric bands), and uncertainty-aware forecasting (decomposed aleatoric and epistemic bands).}}{2}{}\protected@file@percent }
+\newlabel{fig:forecasting_head}{{1}{2}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Shared backbone.}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Heteroscedastic head.}{2}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Training objective.}{2}{}\protected@file@percent }
+\citation{gal2016dropout}
+\citation{kendall2017uncertainties}
+\citation{zhou2021informer}
+\citation{gneiting2007strictly}
+\newlabel{eq:nll}{{2}{3}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Test-time uncertainty decomposition.}{3}{}\protected@file@percent }
+\newlabel{eq:decomp}{{3}{3}{}{}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Experiments}{3}{}\protected@file@percent }
+\newlabel{sec:experiments}{{3}{3}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Dataset and protocol.}{3}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Implementation.}{3}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Main results on Weather at horizons $H{=}96$ and $H{=}336$. Lower is better. Best values within the A1–A4 cascade are bolded.}}{4}{}\protected@file@percent }
+\newlabel{tab:compact_results}{{1}{4}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Cascading configurations.}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Extended ablations.}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Results}{4}{}\protected@file@percent }
+\newlabel{sec:results}{{4}{4}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Point accuracy is largely preserved.}{4}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{The aleatoric head drives calibration.}{4}{}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Uncertainty decomposition heatmap for a test sample (A7, $H{=}96$) across eight Weather variables. \textbf  {(a)}~Absolute prediction error. \textbf  {(b)}~Aleatoric (learned) variance dominates, with colorbar range $0$--$4.0$. \textbf  {(c)}~Epistemic (MC Dropout) variance peaks at ${\sim }0.016$, confirming the ${<}0.3\%$ share in Table~\ref {tab:compact_results}. \textbf  {(d)}~Total uncertainty is visually indistinguishable from~(b).}}{5}{}\protected@file@percent }
+\newlabel{fig:heatmap}{{2}{5}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Epistemic variance is a fraction of a percent.}{5}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Decoupled training requires decoupled model selection.}{5}{}\protected@file@percent }
+\citation{eldele2024tslanet}
+\citation{nix1994estimating}
+\citation{gal2016dropout}
+\citation{kendall2017uncertainties}
+\citation{lakshminarayanan2017simple}
+\citation{gneiting2007strictly}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Discussion}{6}{}\protected@file@percent }
+\newlabel{sec:discussion}{{5}{6}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Limitations.}{6}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Future directions.}{6}{}\protected@file@percent }
+\newlabel{sec:partb}{{5}{6}{}{}{}}
+\@writefile{toc}{\contentsline {paragraph}{Personal Contribution.}{6}{}\protected@file@percent }
+\citation{lakshminarayanan2017simple}
+\citation{eldele2024tslanet}
+\@writefile{toc}{\contentsline {paragraph}{Critical Evaluation.}{7}{}\protected@file@percent }
+\citation{kendall2017uncertainties,gal2016dropout}
+\bibstyle{splncs04}
+\bibdata{references}
+\bibcite{eldele2024tslanet}{1}
+\bibcite{gal2016dropout}{2}
+\bibcite{gneiting2007strictly}{3}
+\bibcite{hullermeier2021aleatoric}{4}
+\bibcite{kendall2017uncertainties}{5}
+\bibcite{lakshminarayanan2017simple}{6}
+\bibcite{nie2023patchtst}{7}
+\bibcite{nix1994estimating}{8}
+\@writefile{toc}{\contentsline {paragraph}{GenAI Audit.}{8}{}\protected@file@percent }
+\bibcite{salinas2020deepar}{9}
+\bibcite{zhou2021informer}{10}
+\gdef \@abspage@last{9}
